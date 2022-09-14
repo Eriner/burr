@@ -13,10 +13,10 @@ jobs:
     timeout-minutes: 5
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/setup-go@v2
+      - uses: actions/setup-go@268d8c0ca0432bb2cf416faae41297df9d262d7f #v3.3.0
         with:
           go-version: 1.19
-      - uses: actions/checkout@v3.0.0
+      - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b #v3.0.2
       - name: Test
         run: |
           make test
@@ -25,10 +25,10 @@ jobs:
     timeout-minutes: 5
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/setup-go@v2
+      - uses: actions/setup-go@268d8c0ca0432bb2cf416faae41297df9d262d7f #v3.3.0
         with:
           go-version: 1.19
-      - uses: actions/checkout@v3.0.0
-      - name: Test
+      - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b #v3.0.2
+      - name: Build
         run: |
-          make test
+          make build
