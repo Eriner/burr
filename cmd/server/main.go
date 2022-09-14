@@ -3,12 +3,10 @@ package main
 import (
 	"fmt"
 	"log"
-	"net/http"
 	"os"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
+	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
 
@@ -24,86 +22,61 @@ type ServerConfig struct {
 const version string = "v0.1"
 
 func main() {
-	fmt.Printf("Burr %s", version)
-	fmt.Printf("Copyright © %d Matt Hamilton", time.Now().Year())
-	fmt.Printf("Licensed under the GNU Affero Public License 3.0")
+	fmt.Printf("Burr %s\n", version)
+	fmt.Printf("Copyright © %d Matt Hamilton\n", time.Now().Year())
+	fmt.Printf("Licensed under the GNU Affero Public License 3.0\n")
+
+	//
+	// CLI
+	//
+
+	var cfgFile string
+	root := &cobra.Command{
+		Use: "burr",
+		Run: func(_ *cobra.Command, _ []string) {
+			// All-in-One mode
+			cmds := map[string]func() error{
+				"web": web,
+			}
+			errCh := make(chan error)
+			for k, v := range cmds {
+				log.Println("Launching component: " + k)
+				go func() {
+					// catch errors and nils, because nil means a service exited
+					errCh <- v()
+				}()
+			}
+			if err := <-errCh; err != nil {
+				// NOTE: some services may need additional signaling for cleanup stuffs in the future
+				log.Fatal(err)
+			}
+			os.Exit(0) // should never hit this exit unless somehow all services close without error
+		},
+		// SilenceUsage: true,
+	}
+	root.PersistentFlags().StringVarP(&cfgFile, "config", "c", "config.yaml", "YAML configuration file for burr")
+	root.AddCommand(webCmd)
 
 	//
 	// Configuration
 	//
 
-	cfgFile := "config.yaml"
 	log.Printf("Reading configuration from %s...", cfgFile)
 	cfgf, err := os.Open(cfgFile)
 	if err != nil {
-		panic(err)
+		log.Fatalf("unable to open %s: %v", cfgFile, err)
 	}
 	defer cfgf.Close()
 	var cfg *Config
 	if err := yaml.NewDecoder(cfgf).Decode(&cfg); err != nil {
-		panic(err)
+		log.Fatalf("unable to parse YAML in %s: %v", cfgFile, err)
 	}
 
 	//
-	// Secrets
-	//
-	//TODO
-
-	//
-	// Queuing
-	//
-	//TODO
-
-	//
-	// Database
-	//
-	//TODO
-
-	//
-	// External S3
-	//
-	//TODO
-
-	//
-	// Internal S3
-	//
-	//TODO
-
-	//
-	// Worker Cache
-	//
-	//TODO
-
-	//
-	// HTTP Server
+	// Run CLI
 	//
 
-	r := chi.NewRouter()
-	r.Use(middleware.RealIP)
-	r.Use(middleware.RequestID)
-	r.Use(middleware.Recoverer)
-	r.Use(middleware.Logger)
-
-	// Implementations of existing APIs
-	pleromaAPI(r)
-	// TODO: mastodonAPI(r)
-
-	server := &http.Server{
-		Addr:         "127.0.0.1:3333",
-		Handler:      r,
-		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 5 * time.Second,
+	if err := root.Execute(); err != nil {
+		log.Fatal(err)
 	}
-	httpErrs := make(chan error)
-	go func() {
-		httpErrs <- server.ListenAndServe()
-	}()
-	log.Printf("HTTP server listening at %s...", server.Addr)
-	if err := <-httpErrs; err != nil {
-		log.Printf("HTTP server exited with error: %v", err)
-	}
-}
-
-func pleromaAPI(r *chi.Mux) {
-	// TODO: implement plorama API
 }
