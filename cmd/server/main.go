@@ -3,21 +3,10 @@ package main
 import (
 	"fmt"
 	"log"
-	"os"
 	"time"
 
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 )
-
-type Config struct {
-	ServerConfig
-}
-
-type ServerConfig struct {
-	Title  string
-	Domain string
-}
 
 const version string = "v0.1"
 
@@ -33,14 +22,18 @@ func main() {
 	var cfgFile string
 	root := &cobra.Command{
 		Use: "burr",
-		Run: func(_ *cobra.Command, _ []string) {
-			// All-in-One mode
+		RunE: func(_ *cobra.Command, _ []string) error {
+			cfg, err := ConfigFromFile(cfgFile)
+			if err != nil {
+				return err
+			}
+			log.Printf("Launching all services for %s...", cfg.Domain)
 			cmds := map[string]func() error{
 				"web": web,
 			}
 			errCh := make(chan error)
 			for k, v := range cmds {
-				log.Println("Launching component: " + k)
+				log.Println("Launching " + k)
 				go func() {
 					// catch errors and nils, because nil means a service exited
 					errCh <- v()
@@ -48,29 +41,14 @@ func main() {
 			}
 			if err := <-errCh; err != nil {
 				// NOTE: some services may need additional signaling for cleanup stuffs in the future
-				log.Fatal(err)
+				return err
 			}
-			os.Exit(0) // should never hit this exit unless somehow all services close without error
+			return nil
 		},
 		// SilenceUsage: true,
 	}
 	root.PersistentFlags().StringVarP(&cfgFile, "config", "c", "config.yaml", "YAML configuration file for burr")
 	root.AddCommand(webCmd)
-
-	//
-	// Configuration
-	//
-
-	log.Printf("Reading configuration from %s...", cfgFile)
-	cfgf, err := os.Open(cfgFile)
-	if err != nil {
-		log.Fatalf("unable to open %s: %v", cfgFile, err)
-	}
-	defer cfgf.Close()
-	var cfg *Config
-	if err := yaml.NewDecoder(cfgf).Decode(&cfg); err != nil {
-		log.Fatalf("unable to parse YAML in %s: %v", cfgFile, err)
-	}
 
 	//
 	// Run CLI
