@@ -1,0 +1,59 @@
+---
+kind: pipeline
+type: docker
+name: binary
+trigger:
+  branch:
+    - master
+
+steps:
+  - name: test
+    image: golang:alpine
+    volumes:
+      - name: cache
+        path: /go
+    environment:
+      GOOS: linux
+      GOARCH: amd64
+      CGO_ENABLED: 1
+    commands:
+      - apk add -U --no-cache git musl-dev build-base
+      - make test
+  - name: build
+    image: golang:alpine
+    volumes:
+      - name: cache
+        path: /go
+    environment:
+      GOOS: linux
+      GOARCH: amd64
+      CGO_ENABLED: 1
+    commands:
+      - apk add -U --no-cache git musl-dev build-base
+      - make build
+
+volumes:
+  - name: cache
+    temp: {}
+
+services:
+  - name: faktory
+    image: contribsys/faktory
+    cap_drop:
+      - ALL
+    command: ["/faktory", "-b", ":7419", "-w", ":7420"]
+  - name: db
+    image: postgres:14-alpine
+    cap_drop:
+      - ALL
+    environment:
+      POSTGRES_HOST_AUTH_METHOD: "trust"
+  - name: redis
+    image: redis:6-alpine
+    cap_drop:
+      - ALL
+    user: 999:999
+    ulimits:
+      nofile:
+        soft: 20000
+        hard: 40000

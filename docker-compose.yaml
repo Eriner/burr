@@ -1,0 +1,84 @@
+version: "3.8"
+
+services:
+  burr:
+    restart: unless-stopped
+    image: ghcr.io/eriner/burr:latest
+    cap_drop:
+      - ALL
+    ports:
+      - "3333:3333"
+    networks:
+      - internet
+      - intranet
+    healthcheck:
+      test: ["CMD", "/server", "status"]
+    volumes:
+      - "./data/burr/data:/data:rw"
+      - "./config.yaml:/data/config.yaml:ro"
+
+  faktory:
+    restart: unless-stopped
+    image: contribsys/faktory
+    cap_drop:
+      - ALL
+    ports:
+      - "7419:7419"
+      - "7420:7420"
+    networks:
+      - intranet
+    command: "/faktory -b :7419 -w :7420" # -e production
+    volumes:
+      - "./data/faktory/faktory:/var/lib/faktory:rw"
+
+  db:
+    shm_size: "8G"
+    restart: unless-stopped
+    image: postgres:14-alpine
+    networks:
+      - intranet
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+    environment:
+      - "POSTGRES_HOST_AUTH_METHOD=trust"
+    volumes:
+      - "./data/postgresql/data:/var/lib/postgresql/data:rw"
+
+  redis:
+    restart: unless-stopped
+    image: redis:6-alpine
+    cap_drop:
+      - ALL
+    user: 999:999
+    ulimits:
+      nofile:
+        soft: 20000
+        hard: 40000
+    networks:
+      - intranet
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+    volumes:
+      - "./data/redis/data:/data:rw"
+
+  #pgbouncer:
+  #  restart: unless-stopped
+  #  image: edoburu/pgbouncer:latest
+  #  cap_drop:
+  #    - ALL
+  #  depends_on:
+  #    - db
+  #  volumes:
+  #    - "./data/pgbouncer/userlist.txt:/etc/pgbouncer/userlist.txt:ro"
+  #    - "./data/pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro"
+  #  networks:
+  #    - intranet
+  #  ports:
+  #    - "5432:5432"
+
+networks:
+  intranet:
+    internal: true
+  internet:

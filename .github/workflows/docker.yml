@@ -1,0 +1,26 @@
+name: docker
+
+on:
+  push:
+    tags:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  docker:
+    name: Docker
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3.0.0
+      - run: |
+          make docker
+      - uses: docker/login-action@v1
+        with:
+          registry: ghcr.io
+          username: eriner
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - run: |
+          docker push ghcr.io/eriner/burr:latest
