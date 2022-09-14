@@ -28,7 +28,7 @@ func main() {
 				return err
 			}
 			log.Printf("Launching all services for %s...", cfg.Domain)
-			cmds := map[string]func() error{
+			cmds := map[string]func(*Config) error{
 				"web": web,
 			}
 			errCh := make(chan error)
@@ -36,7 +36,7 @@ func main() {
 				log.Println("Launching " + k)
 				go func() {
 					// catch errors and nils, because nil means a service exited
-					errCh <- v()
+					errCh <- v(cfg)
 				}()
 			}
 			if err := <-errCh; err != nil {

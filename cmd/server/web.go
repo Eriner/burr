@@ -1,11 +1,14 @@
 package main
 
 import (
+	"crypto/tls"
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"time"
 
+	"github.com/eriner/burr/internal/secrets"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/spf13/cobra"
@@ -14,16 +17,54 @@ import (
 var webCmd = &cobra.Command{
 	Use:     "web",
 	Aliases: []string{"http"},
-	RunE: func(_ *cobra.Command, _ []string) error {
-		return web()
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		f, err := cmd.Flags().GetString("config")
+		if err != nil {
+			return fmt.Errorf("failed to read config flag: %w", err)
+		}
+		cfg, err := ConfigFromFile(f)
+		if err != nil {
+			return fmt.Errorf("failed to read config file %q: %w", f, err)
+		}
+		return web(cfg)
 	},
 }
 
-func web() error {
+func web(cfg *Config) error {
 	//
 	// Secrets
 	//
-	//TODO
+	vaultToken := "root" // TODO: read token from stdin or an alternate then-unmounted file path
+	if len(cfg.Vault.Addr) == 0 {
+		return fmt.Errorf("vault.addr not specified")
+	}
+	u, err := url.Parse(cfg.Vault.Addr)
+	if err != nil {
+		return fmt.Errorf("invalid vault.addr value of %q: %w", cfg.Vault.Addr, err)
+	}
+	vaultClient := &http.Client{
+		Timeout: 5 * time.Second,
+	}
+	switch u.Scheme {
+	case "http":
+		log.Println("WARNING: Vault address is not HTTPS")
+		vaultClient.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		}
+	case "https":
+		break
+	default:
+		return fmt.Errorf("vault.addr does not start with \"http://\" or \"https://\"")
+	}
+	vault, err := secrets.Vault(cfg.Vault.Addr, vaultToken, vaultClient)
+	if err != nil {
+		return fmt.Errorf("failed to connect to Vault: %w", err)
+	}
+	if err := vault.Init(); err != nil {
+		return err
+	}
 
 	//
 	// Queuing

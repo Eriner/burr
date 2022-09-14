@@ -9,12 +9,18 @@ import (
 )
 
 type Config struct {
-	ServerConfig `yaml:"server"`
+	Server
+	Vault
 }
 
-type ServerConfig struct {
+type Server struct {
 	Title  string
 	Domain string
+}
+
+type Vault struct {
+	Addr     string
+	BurrPath string
 }
 
 func ConfigFromFile(path string) (*Config, error) {

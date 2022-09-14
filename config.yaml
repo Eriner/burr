@@ -1,3 +1,5 @@
 server:
   name: Burr
   domain: "example.localhost"
+vault:
+  addr: "http://127.0.0.1:8200"
