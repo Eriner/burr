@@ -1,5 +1,3 @@
-//go:build !redis
-
 package kv_test
 
 import (
@@ -12,7 +10,7 @@ import (
 
 func TestBuiltinDriver(t *testing.T) {
 	assert := assert.New(t)
-	c, err := kv.Open(nil)
+	c, err := kv.Builtin()
 	assert.NoError(err)
 	err = c.Create("foo", "value", time.Now().Add(4*time.Minute))
 	assert.NoError(err)

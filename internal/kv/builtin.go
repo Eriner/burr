@@ -1,5 +1,3 @@
-//go:build !redis
-
 package kv
 
 import "time"
@@ -41,6 +39,6 @@ type data struct {
 	e time.Time
 }
 
-func Open(cfg map[string]any) (KV, error) {
+func Builtin() (KV, error) {
 	return &builtin{make(map[string]*data)}, nil
 }

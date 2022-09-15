@@ -48,7 +48,11 @@ func main() {
 		// SilenceUsage: true,
 	}
 	root.PersistentFlags().StringVarP(&cfgFile, "config", "c", "config.yaml", "YAML configuration file for burr")
+
+	// burr web
 	root.AddCommand(webCmd)
+	// burr worker -q push
+	root.AddCommand(workerCmd)
 
 	//
 	// Run CLI

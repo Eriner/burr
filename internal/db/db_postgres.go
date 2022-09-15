@@ -1,5 +1,3 @@
-//go:build postgres && !sqlite
-
 package db
 
 import (
@@ -8,26 +6,11 @@ import (
 	"github.com/eriner/burr/internal/ent"
 )
 
-func init() {
-	db = func() database { return &client{} }
-}
-
-var _ database = (*client)(nil)
-
-type client struct {
-	ec *ent.Client
-}
-
-func (c *client) Open(cfg map[string]any) (*ent.Client, error) {
-	if c.ec != nil {
-		return c.ec, nil
-	}
+func Postgres(host, port, user, password, database string) (*ent.Client, error) {
 	client, err := ent.Open("postgres", fmt.Sprintf("host=%s port=%s user=%s dbname=%s password=%s",
-		cfg["host"], cfg["port"], cfg["user"], cfg["database"], cfg["password"]))
+		host, port, user, database, password))
 	if err != nil {
-		return nil, fmt.Errorf("failed connecting to the postgres database %s@%s:%s: %w", cfg["user"], cfg["host"], cfg["port"], err)
+		return nil, fmt.Errorf("failed connecting to the postgres database %s@%s:%s: %w", user, host, port, err)
 	}
-	cfg = nil // contained sensitive info. trash it
-	c.ec = client
-	return client, nil
+	return client, initDB(client)
 }

@@ -1,15 +1,12 @@
 package main
 
 import (
-	"context"
-	"crypto/tls"
 	"fmt"
 	"log"
 	"net/http"
-	"net/url"
 	"time"
 
-	database "github.com/eriner/burr/internal/db"
+	"github.com/eriner/burr/internal/ent"
 	"github.com/eriner/burr/internal/kv"
 	"github.com/eriner/burr/internal/secrets"
 	"github.com/go-chi/chi/v5"
@@ -34,97 +31,37 @@ var webCmd = &cobra.Command{
 }
 
 func web(cfg *Config) error {
-	//
-	// Secrets
-	//
-	vaultToken := "root" // TODO: read token from stdin or an alternate then-unmounted file path
-	if len(cfg.Vault.Addr) == 0 {
-		return fmt.Errorf("vault.addr not specified")
-	}
-	u, err := url.Parse(cfg.Vault.Addr)
+	secrets, err := secretsFromCfg(cfg)
 	if err != nil {
-		return fmt.Errorf("invalid vault.addr value of %q: %w", cfg.Vault.Addr, err)
+		return err
 	}
-	vaultClient := &http.Client{
-		Timeout: 5 * time.Second,
-	}
-	switch u.Scheme {
-	case "http":
-		log.Println("WARNING: Vault address is not HTTPS")
-		vaultClient.Transport = &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
-			},
-		}
+	log.Println("Connected to Secrets store")
 
-	case "https":
-		break
-	default:
-		return fmt.Errorf("vault.addr does not start with \"http://\" or \"https://\"")
-	}
-	vault, err := secrets.Open(map[string]any{
-		"addr":   cfg.Vault.Addr,
-		"token":  vaultToken,
-		"client": vaultClient,
-	})
+	db, err := dbFromCfg(cfg, secrets)
 	if err != nil {
-		return fmt.Errorf("failed to connect to Vault: %w", err)
+		return err
 	}
-	log.Printf("Connected to Vault")
+	log.Println("Connected to DB")
 
-	//
-	// Queuing
-	//
-	//TODO
-
-	//
-	// Database
-	//
-	dbCfg := cfg.DB
-	if dbCfg["driver"] == "postgres" || dbCfg["driver"] == "postgresql" {
-		res, err := vault.ReadWithContext(context.Background(), cfg.Vault.BurrPath+"/db_password")
-		if err != nil {
-			return fmt.Errorf("failed to read postgres password from Vault: %w", err)
-		}
-		if len(res["password"].(string)) == 0 {
-			return fmt.Errorf("Vault has %s/db_password entry, but no \"password\" data value: %w",
-				cfg.Vault.BurrPath, err)
-		}
-		dbCfg["password"] = res["password"]
-		res = nil // GC
-	}
-	db, err := database.Open(dbCfg)
+	kv, err := kvFromCfg(cfg, secrets)
 	if err != nil {
-		return fmt.Errorf("failed to connect to the database: %w", err)
+		return err
 	}
-	defer db.Close()
-	dbCfg = nil // GC
-	log.Println("Connected to database")
+	log.Println("Connected to KV cache")
 
-	//
-	// External S3
-	//
-	//TODO
+	// TODO Queue
 
-	//
-	// Internal S3
-	//
-	//TODO
+	// TODO External S3
 
-	//
-	// Worker Cache
-	//
-	cache, err := kv.Open(nil)
-	if err != nil {
-		return fmt.Errorf("failed to connect to the redis worker cache: %w", err)
-	}
-	_ = cache // TODO will almost certainly be necessary in the near future
-	log.Println("Connected to worker cache")
+	// TODO Internal S3
 
 	//
 	// HTTP Server
 	//
+	return api(secrets, db, kv)
+}
 
+func api(secrets secrets.Store, db *ent.Client, kv kv.KV) error {
 	r := chi.NewRouter()
 	r.Use(middleware.RealIP)
 	r.Use(middleware.RequestID)
@@ -145,7 +82,7 @@ func web(cfg *Config) error {
 	go func() {
 		httpErrs <- server.ListenAndServe()
 	}()
-	log.Printf("HTTP server listening at %s...", server.Addr)
+	log.Printf("HTTP API server listening at %s...", server.Addr)
 	if err := <-httpErrs; err != nil {
 		return fmt.Errorf("HTTP server exited with error: %w", err)
 	}

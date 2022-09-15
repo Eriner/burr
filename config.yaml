@@ -1,7 +1,7 @@
 server:
   name: Burr
   domain: "example.localhost"
-vault:
+secrets:
   addr: "http://127.0.0.1:8200"
 db:
   driver: "sqlite"

@@ -10,8 +10,9 @@ import (
 
 type Config struct {
 	Server
-	Vault
+	Secrets
 	DB map[string]any
+	KV map[string]any
 }
 
 type Server struct {
@@ -19,9 +20,9 @@ type Server struct {
 	Domain string
 }
 
-type Vault struct {
-	Addr     string
-	BurrPath string
+type Secrets struct {
+	Addr string
+	Path string
 }
 
 func ConfigFromFile(path string) (*Config, error) {

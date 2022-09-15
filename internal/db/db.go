@@ -11,34 +11,6 @@ import (
 	"github.com/eriner/burr/internal/policy"
 )
 
-// db is set in an init() function based on the build tags provided, postgres or sqlite.
-var db func() database
-
-// Open the database
-func Open(cfg map[string]any) (*ent.Client, error) {
-	if cfg == nil {
-		cfg = make(map[string]any)
-	}
-	if db == nil {
-		return nil, fmt.Errorf("burr was built without a database driver")
-	}
-	db := db()
-	c, err := db.Open(cfg)
-	if err != nil {
-		return nil, err
-	}
-	err = initDB(c)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize database: %w", err)
-	}
-	return c, nil
-}
-
-// database is implemented by postgres and sqlite
-type database interface {
-	Open(cfg map[string]any) (*ent.Client, error)
-}
-
 // initDB sets runtime hooks, runs migrations, and other #dbthings
 func initDB(c *ent.Client) error {
 	if c == nil {
