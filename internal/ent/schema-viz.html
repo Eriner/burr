@@ -70,7 +70,7 @@
     }
 
     
-    const entGraph = JSON.parse("{\"nodes\":[{\"id\":\"Server\",\"fields\":[{\"name\":\"created_at\",\"type\":\"time.Time\"},{\"name\":\"updated_at\",\"type\":\"time.Time\"},{\"name\":\"created_by\",\"type\":\"int\"},{\"name\":\"updated_by\",\"type\":\"int\"}]}],\"edges\":null}");
+    const entGraph = JSON.parse("{\"nodes\":[{\"id\":\"Server\",\"fields\":[{\"name\":\"created_at\",\"type\":\"time.Time\"},{\"name\":\"updated_at\",\"type\":\"time.Time\"},{\"name\":\"created_by\",\"type\":\"int\"},{\"name\":\"updated_by\",\"type\":\"int\"}]},{\"id\":\"User\",\"fields\":[{\"name\":\"created_at\",\"type\":\"time.Time\"},{\"name\":\"updated_at\",\"type\":\"time.Time\"},{\"name\":\"created_by\",\"type\":\"int\"},{\"name\":\"updated_by\",\"type\":\"int\"},{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"email\",\"type\":\"string\"},{\"name\":\"passwordHash\",\"type\":\"[]byte\"}]}],\"edges\":null}");
     const nodes = new vis.DataSet((entGraph.nodes || []).map(n =>
     ({
       id: n.id,

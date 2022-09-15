@@ -7,6 +7,8 @@ require (
 	github.com/go-chi/chi/v5 v5.0.7
 	github.com/hashicorp/vault/api v1.7.2
 	github.com/hedwigz/entviz v0.0.0-20220529060928-44574cfd7a21
+	github.com/lib/pq v1.10.5
+	github.com/mattn/go-sqlite3 v1.14.13
 	github.com/spf13/cobra v1.5.0
 	gopkg.in/yaml.v3 v3.0.1
 )

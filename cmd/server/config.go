@@ -11,6 +11,7 @@ import (
 type Config struct {
 	Server
 	Vault
+	DB map[string]any
 }
 
 type Server struct {

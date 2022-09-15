@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"log"
@@ -8,6 +9,7 @@ import (
 	"net/url"
 	"time"
 
+	database "github.com/eriner/burr/internal/db"
 	"github.com/eriner/burr/internal/secrets"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -74,7 +76,25 @@ func web(cfg *Config) error {
 	//
 	// Database
 	//
-	//TODO
+	dbCfg := cfg.DB
+	if dbCfg["driver"] == "postgres" || dbCfg["driver"] == "postgresql" {
+		res, err := vault.ReadWithContext(context.Background(), cfg.Vault.BurrPath+"/db_password")
+		if err != nil {
+			return fmt.Errorf("failed to read postgres password from Vault: %w", err)
+		}
+		if len(res["password"].(string)) == 0 {
+			return fmt.Errorf("Vault has %s/db_password entry, but no \"password\" data value: %w",
+				cfg.Vault.BurrPath, err)
+		}
+		dbCfg["password"] = res["password"]
+		res = nil // GC
+	}
+	db, err := database.Open(dbCfg)
+	if err != nil {
+		return fmt.Errorf("failed to connect to the database: %w", err)
+	}
+	defer db.Close()
+	dbCfg = nil // GC
 
 	//
 	// External S3

@@ -22,9 +22,27 @@ var (
 		Columns:    ServersColumns,
 		PrimaryKey: []*schema.Column{ServersColumns[0]},
 	}
+	// UsersColumns holds the columns for the "users" table.
+	UsersColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "created_by", Type: field.TypeInt, Nullable: true},
+		{Name: "updated_by", Type: field.TypeInt, Nullable: true},
+		{Name: "name", Type: field.TypeString, Size: 64, Default: "unknown"},
+		{Name: "email", Type: field.TypeString, Unique: true, Size: 64},
+		{Name: "password_hash", Type: field.TypeBytes, Size: 60},
+	}
+	// UsersTable holds the schema information for the "users" table.
+	UsersTable = &schema.Table{
+		Name:       "users",
+		Columns:    UsersColumns,
+		PrimaryKey: []*schema.Column{UsersColumns[0]},
+	}
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
 		ServersTable,
+		UsersTable,
 	}
 )
 

@@ -8,3 +8,6 @@ import (
 
 // Server is the predicate function for server builders.
 type Server func(*sql.Selector)
+
+// User is the predicate function for user builders.
+type User func(*sql.Selector)

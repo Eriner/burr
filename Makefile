@@ -1,13 +1,13 @@
 run:
-	go run -mod=vendor ./cmd/server --config config.yaml
+	go run -mod=vendor -tags=sqlite ./cmd/server --config config.yaml
 clean:
 	rm -f ./server
 test:
-	go test -v -mod=vendor ./...
+	go test -v -mod=vendor -tags=sqlite ./...
 build:
-	go build -mod=vendor -o burr ./cmd/server
+	go build -mod=vendor -o burr -tags=sqlite ./cmd/server
 generate:
-	go generate -mod=mod ./...
+	go generate -mod=mod -tags=sqlite ./...
 docker:
 	docker build -f Dockerfile.test --output type=tar,dest=/dev/null .
 	docker build -f Dockerfile -t ghcr.io/eriner/burr:latest .

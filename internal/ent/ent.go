@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/eriner/burr/internal/ent/server"
+	"github.com/eriner/burr/internal/ent/user"
 )
 
 // ent aliases to avoid import conflicts in user's code.
@@ -32,6 +33,7 @@ type OrderFunc func(*sql.Selector)
 func columnChecker(table string) func(string) error {
 	checks := map[string]func(string) bool{
 		server.Table: server.ValidColumn,
+		user.Table:   user.ValidColumn,
 	}
 	check, ok := checks[table]
 	if !ok {
