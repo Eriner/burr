@@ -1,4 +1,5 @@
 FROM golang:alpine as build
+ENV CI=true
 
 WORKDIR /build
 RUN apk add -U upx git musl-dev gcc make

@@ -56,17 +56,19 @@ func web(cfg *Config) error {
 				InsecureSkipVerify: true,
 			},
 		}
+
 	case "https":
 		break
 	default:
 		return fmt.Errorf("vault.addr does not start with \"http://\" or \"https://\"")
 	}
-	vault, err := secrets.Vault(cfg.Vault.Addr, vaultToken, vaultClient)
+	vault, err := secrets.Open(map[string]any{
+		"addr":   cfg.Vault.Addr,
+		"token":  vaultToken,
+		"client": vaultClient,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to connect to Vault: %w", err)
-	}
-	if err := vault.Init(); err != nil {
-		return err
 	}
 	log.Printf("Connected to Vault")
 
