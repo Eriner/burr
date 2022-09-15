@@ -5,11 +5,13 @@ go 1.19
 require (
 	entgo.io/ent v0.11.2
 	github.com/go-chi/chi/v5 v5.0.7
+	github.com/go-redis/redis/v8 v8.11.5
 	github.com/hashicorp/vault/api v1.7.2
 	github.com/hedwigz/entviz v0.0.0-20220529060928-44574cfd7a21
 	github.com/lib/pq v1.10.5
 	github.com/mattn/go-sqlite3 v1.14.13
 	github.com/spf13/cobra v1.5.0
+	github.com/stretchr/testify v1.7.1-0.20210427113832-6241f9ab9942
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -20,6 +22,9 @@ require (
 	github.com/armon/go-metrics v0.3.9 // indirect
 	github.com/armon/go-radix v1.0.0 // indirect
 	github.com/cenkalti/backoff/v3 v3.0.0 // indirect
+	github.com/cespare/xxhash/v2 v2.1.2 // indirect
+	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/fatih/color v1.7.0 // indirect
 	github.com/go-openapi/inflect v0.19.0 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
@@ -56,6 +61,7 @@ require (
 	github.com/mitchellh/reflectwalk v1.0.0 // indirect
 	github.com/oklog/run v1.0.0 // indirect
 	github.com/pierrec/lz4 v2.5.2+incompatible // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/zclconf/go-cty v1.8.0 // indirect

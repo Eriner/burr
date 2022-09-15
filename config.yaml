@@ -3,3 +3,8 @@ server:
   domain: "example.localhost"
 vault:
   addr: "http://127.0.0.1:8200"
+db:
+  driver: "sqlite"
+redis:
+  driver: "dev"
+  addr: "http://127.0.0.1:6379"

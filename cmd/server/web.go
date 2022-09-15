@@ -10,6 +10,7 @@ import (
 	"time"
 
 	database "github.com/eriner/burr/internal/db"
+	"github.com/eriner/burr/internal/kv"
 	"github.com/eriner/burr/internal/secrets"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -67,6 +68,7 @@ func web(cfg *Config) error {
 	if err := vault.Init(); err != nil {
 		return err
 	}
+	log.Printf("Connected to Vault")
 
 	//
 	// Queuing
@@ -95,6 +97,7 @@ func web(cfg *Config) error {
 	}
 	defer db.Close()
 	dbCfg = nil // GC
+	log.Println("Connected to database")
 
 	//
 	// External S3
@@ -109,7 +112,12 @@ func web(cfg *Config) error {
 	//
 	// Worker Cache
 	//
-	//TODO
+	cache, err := kv.Open(nil)
+	if err != nil {
+		return fmt.Errorf("failed to connect to the redis worker cache: %w", err)
+	}
+	_ = cache // TODO will almost certainly be necessary in the near future
+	log.Println("Connected to worker cache")
 
 	//
 	// HTTP Server
