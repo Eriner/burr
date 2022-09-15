@@ -14,7 +14,7 @@ release:
 	git diff-index --quiet --cached HEAD --
 	git diff-files --quiet
 	git ls-files --others --exclude-standard
-	go build -mod=vendor -o burr -tags=postgres,redis,vault ./...
+	go build -mod=vendor -o burr -tags=postgres,redis,vault ./cmd/server
 docker:
 	docker build -f Dockerfile.test --output type=tar,dest=/dev/null .
 	docker build -f Dockerfile -t ghcr.io/eriner/burr:latest .
