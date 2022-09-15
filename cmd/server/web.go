@@ -49,7 +49,25 @@ func web(cfg *Config) error {
 	}
 	log.Println("Connected to KV cache")
 
-	// TODO Queue
+	faktorySrv, faktorySrvClose, worker, err := faktoryFromCfg(cfg)
+	if err != nil {
+		return err
+	}
+	if faktorySrv != nil {
+		go func() {
+			// TODO: pass err to chan to handle or signal exit
+			log.Println(faktorySrv.Run())
+		}()
+		defer faktorySrvClose()
+		log.Printf("Faktory server listening at http://%s", faktorySrv.Options.Binding)
+	}
+	if worker != nil {
+		go func() {
+			// TODO: pass err to chan to handle or signal exit
+			log.Println(worker.Run())
+		}()
+	}
+	log.Println("Connected to Faktory")
 
 	// TODO External S3
 

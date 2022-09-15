@@ -11,8 +11,9 @@ import (
 type Config struct {
 	Server
 	Secrets
-	DB map[string]any
-	KV map[string]any
+	DB      map[string]any
+	KV      map[string]any
+	Faktory map[string]any
 }
 
 type Server struct {

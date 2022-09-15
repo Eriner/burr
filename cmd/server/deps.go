@@ -4,14 +4,20 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
+	fserver "github.com/contribsys/faktory/server"
+	"github.com/contribsys/faktory/webui"
+	fworker "github.com/contribsys/faktory_worker_go"
 	database "github.com/eriner/burr/internal/db"
 	"github.com/eriner/burr/internal/ent"
+	"github.com/eriner/burr/internal/faktory"
 	"github.com/eriner/burr/internal/kv"
 	"github.com/eriner/burr/internal/secrets"
 )
@@ -137,4 +143,55 @@ func kvFromCfg(cfg *Config, secrets secrets.Store) (store kv.KV, err error) {
 	default:
 		return nil, fmt.Errorf("unknown KV driver %q", c["driver"])
 	}
+}
+
+func faktoryFromCfg(cfg *Config) (srv *fserver.Server, srvClose func(), worker *fworker.Manager, err error) {
+	if cfg == nil {
+		return nil, nil, nil, fmt.Errorf("incomplete arguments")
+	}
+	c := cfg.Faktory
+	if c == nil {
+		c = make(map[string]any)
+		c["bind"] = "http://127.0.0.1:7419"
+	}
+	bind, ok := c["bind"].(string)
+	if !ok {
+		bind = ""
+	}
+	addr, ok := c["addr"].(string)
+	if !ok {
+		addr = bind
+	}
+	dir, ok := c["dir"].(string)
+	if !ok {
+		td, err := ioutil.TempDir("", "")
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to create temporary directory for faktory: %w", err)
+		}
+		dir = td
+	}
+	ui, ok := c["ui"].(string)
+	if !ok {
+		ui = ""
+	}
+	if len(ui) == 0 {
+		ui = "http://127.0.0.1:7420"
+	}
+	ui = strings.TrimPrefix(ui, "https://")
+	ui = strings.TrimPrefix(ui, "http://")
+
+	if len(bind) > 0 {
+		bind = strings.TrimPrefix(bind, "https://")
+		bind = strings.TrimPrefix(bind, "http://")
+		srv, srvClose, err = faktory.LocalServer(bind, dir)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to bind and boot local Faktory server: %w", err)
+		}
+		srv.Register(webui.Subsystem(ui))
+	}
+	if len(addr) > 0 {
+		os.Setenv("FAKTORY_URL", addr) // TODO: is there really not a better way to do this?
+		worker = fworker.NewManager()
+	}
+	return srv, srvClose, worker, nil
 }

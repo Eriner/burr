@@ -4,6 +4,8 @@ go 1.19
 
 require (
 	entgo.io/ent v0.11.2
+	github.com/contribsys/faktory v1.6.1
+	github.com/contribsys/faktory_worker_go v1.6.0
 	github.com/go-chi/chi/v5 v5.0.7
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/hashicorp/vault/api v1.7.2
@@ -11,7 +13,7 @@ require (
 	github.com/lib/pq v1.10.5
 	github.com/mattn/go-sqlite3 v1.14.13
 	github.com/spf13/cobra v1.5.0
-	github.com/stretchr/testify v1.7.1-0.20210427113832-6241f9ab9942
+	github.com/stretchr/testify v1.7.2
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -27,6 +29,7 @@ require (
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/fatih/color v1.7.0 // indirect
 	github.com/go-openapi/inflect v0.19.0 // indirect
+	github.com/go-redis/redis v6.15.7+incompatible // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/go-cmp v0.5.6 // indirect
@@ -51,6 +54,7 @@ require (
 	github.com/hashicorp/vault/sdk v0.5.1 // indirect
 	github.com/hashicorp/yamux v0.0.0-20180604194846-3520598351bb // indirect
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect
+	github.com/justinas/nosurf v1.1.1 // indirect
 	github.com/mattn/go-colorable v0.1.6 // indirect
 	github.com/mattn/go-isatty v0.0.12 // indirect
 	github.com/mitchellh/copystructure v1.0.0 // indirect

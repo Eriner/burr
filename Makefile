@@ -1,5 +1,7 @@
-run-dev:
+web:
 	go run -mod=vendor ./cmd/server --config config.yaml
+worker:
+	go run -mod=vendor ./cmd/server worker --config config.yaml
 clean:
 	rm -f ./server
 test:
