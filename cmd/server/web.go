@@ -10,6 +10,7 @@ import (
 	"github.com/eriner/burr/internal/ent"
 	"github.com/eriner/burr/internal/kv"
 	"github.com/eriner/burr/internal/secrets"
+	"github.com/eriner/burr/internal/webfinger"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-fed/activity/pub"
@@ -93,10 +94,14 @@ func listenhttp(errCh chan<- error, secrets secrets.Store, db *ent.Client, kv kv
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Logger)
 
-	// Implementations of existing APIs for compatability.
-	// pleromaAPI(r)
+	// Plumbing APIs
+	webfinger.API(r)
+	hostMetaAPI(r, fqdn)
 	activitypubAPI(r, db, fqdn)
+
+	// Client (compatibility for apps, FEs) APIs
 	mastodonAPI(r)
+	// pleromaAPI(r)
 	devUI(r)
 
 	server := &http.Server{
@@ -125,6 +130,22 @@ func mastodonAPI(r *chi.Mux) {
 	// but hasn't due to problems in the spec (lack of identity, schema vocab, etc.)
 }
 
+func hostMetaAPI(r *chi.Mux, fqdn string) {
+	r.Route("/.well-known/host-meta", func(r chi.Router) {
+		r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/xrd+xml")
+			dat := `<?xml version="1.0" encoding="UTF-8"?>
+<XRD xmlns="http://docs.oasis-open.org/ns/xri/xrd-1.0">
+  <Link rel="lrdd" type="application/xrd+xml" template="https://` + fqdn + `/.well-known/webfinger?resource={uri}"/>
+</XRD>`
+			_, err := w.Write([]byte(dat))
+			if err != nil {
+				panic(fmt.Errorf("failed to write hostmeta response: %w", err))
+			}
+		})
+	})
+}
+
 func activitypubAPI(r *chi.Mux, client *ent.Client, fqdn string) {
 	s := &activitypub.Service{}
 	d := &activitypub.APDB{
@@ -133,6 +154,7 @@ func activitypubAPI(r *chi.Mux, client *ent.Client, fqdn string) {
 	}
 	actor := pub.NewFederatingActor(s, s, d, s)
 	asHandler := pub.NewActivityStreamsHandler(d, s)
+	_ = asHandler
 
 	r.Route("/actors/{username}", func(r chi.Router) {
 		r.Get("/inbox", func(w http.ResponseWriter, r *http.Request) {
@@ -163,13 +185,16 @@ func activitypubAPI(r *chi.Mux, client *ent.Client, fqdn string) {
 			}
 		})
 		r.Post("/outbox", func(w http.ResponseWriter, r *http.Request) {
-			handled, err := actor.PostOutbox(r.Context(), w, r)
-			if err != nil {
-				panic(err)
-			}
-			if !handled {
-				panic("that's weird...")
-			}
+			// C2S only; not implemented
+			/*
+				handled, err := actor.PostOutbox(r.Context(), w, r)
+				if err != nil {
+					panic(err)
+				}
+				if !handled {
+					panic("that's weird...")
+				}
+			*/
 		})
 	})
 }

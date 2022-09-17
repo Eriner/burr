@@ -10,9 +10,10 @@ import (
 	"github.com/go-fed/activity/streams/vocab"
 )
 
-// var _ pub.FederatingActor = (*pub.FederatingActor)(nil)
-
-var _ pub.CommonBehavior = &Service{}
+var (
+	_ pub.CommonBehavior     = &Service{}
+	_ pub.FederatingProtocol = &Service{} // S2S
+)
 
 type Service struct{}
 
