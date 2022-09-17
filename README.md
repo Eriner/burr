@@ -44,7 +44,7 @@ v1.1 will implement the [Pleroma API](https://docs-develop.pleroma.social/backen
 
 v1.2 will implement a GraphQL API so that *new* frontends can be created more easily.
 
-Due to deficiencies and the [W3C's abandonment of the spec](https://activitypub.rocks),
+Due to deficiencies and the [W3C's abandonment of the spec](https://test.activitypub.rocks),
 this project does not seek to implement the C2S ActivityPub spec at this time.
 
 ### Database
