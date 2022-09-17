@@ -266,6 +266,9 @@ github.com/pmezard/go-difflib/difflib
 # github.com/ryanuber/go-glob v1.0.0
 ## explicit
 github.com/ryanuber/go-glob
+# github.com/sony/sonyflake v1.1.0
+## explicit; go 1.13
+github.com/sony/sonyflake
 # github.com/spf13/cobra v1.5.0
 ## explicit; go 1.15
 github.com/spf13/cobra
