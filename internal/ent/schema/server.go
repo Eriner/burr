@@ -8,7 +8,7 @@ type Server struct {
 }
 
 func (Server) Fields() []ent.Field {
-	return nil
+	return []ent.Field{}
 }
 
 func (Server) Edges() []ent.Edge {
