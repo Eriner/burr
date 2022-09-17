@@ -6,11 +6,13 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/eriner/burr/internal/activitypub"
 	"github.com/eriner/burr/internal/ent"
 	"github.com/eriner/burr/internal/kv"
 	"github.com/eriner/burr/internal/secrets"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-fed/activity/pub"
 	"github.com/spf13/cobra"
 )
 
@@ -76,19 +78,26 @@ func web(cfg *Config) error {
 	//
 	// HTTP Server
 	//
-	return api(secrets, db, kv)
+	errCh := make(chan error) // anything sent over this chan indicates failure; log and exit
+	listenhttp(errCh, secrets, db, kv, cfg.Domain)
+	for err := range errCh {
+		return fmt.Errorf("HTTP server exited with error: %w", err)
+	}
+	return nil
 }
 
-func api(secrets secrets.Store, db *ent.Client, kv kv.KV) error {
+func listenhttp(errCh chan<- error, secrets secrets.Store, db *ent.Client, kv kv.KV, fqdn string) {
 	r := chi.NewRouter()
 	r.Use(middleware.RealIP)
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Logger)
 
-	// Implementations of existing APIs
-	pleromaAPI(r)
-	// TODO: mastodonAPI(r)
+	// Implementations of existing APIs for compatability.
+	// pleromaAPI(r)
+	activitypubAPI(r, db, fqdn)
+	mastodonAPI(r)
+	devUI(r)
 
 	server := &http.Server{
 		Addr:         "127.0.0.1:3333",
@@ -96,17 +105,71 @@ func api(secrets secrets.Store, db *ent.Client, kv kv.KV) error {
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 5 * time.Second,
 	}
-	httpErrs := make(chan error)
 	go func() {
-		httpErrs <- server.ListenAndServe()
+		errCh <- server.ListenAndServe()
 	}()
 	log.Printf("HTTP API server listening at %s...", server.Addr)
-	if err := <-httpErrs; err != nil {
-		return fmt.Errorf("HTTP server exited with error: %w", err)
-	}
-	return nil
 }
 
-func pleromaAPI(r *chi.Mux) {
-	// TODO: implement plorama API
+//func pleromaAPI(r *chi.Mux) {
+//	// TODO: implement plorama API
+//}
+
+func devUI(r *chi.Mux) {
+	r.Route("/@{username}", func(r chi.Router) {
+	})
+}
+
+func mastodonAPI(r *chi.Mux) {
+	// TODO: implement mastodon API, precisely what ActivityPub C2S should prevent,
+	// but hasn't due to problems in the spec (lack of identity, schema vocab, etc.)
+}
+
+func activitypubAPI(r *chi.Mux, client *ent.Client, fqdn string) {
+	s := &activitypub.Service{}
+	d := &activitypub.APDB{
+		Host: fqdn,
+		DB:   client,
+	}
+	actor := pub.NewFederatingActor(s, s, d, s)
+	asHandler := pub.NewActivityStreamsHandler(d, s)
+
+	r.Route("/actors/{username}", func(r chi.Router) {
+		r.Get("/inbox", func(w http.ResponseWriter, r *http.Request) {
+			handled, err := actor.GetInbox(r.Context(), w, r)
+			if err != nil {
+				panic(err)
+			}
+			if !handled {
+				panic("that's weird...")
+			}
+		})
+		r.Post("/inbox", func(w http.ResponseWriter, r *http.Request) {
+			handled, err := actor.PostInbox(r.Context(), w, r)
+			if err != nil {
+				panic(err)
+			}
+			if !handled {
+				panic("that's weird...")
+			}
+		})
+		r.Get("/outbox", func(w http.ResponseWriter, r *http.Request) {
+			handled, err := actor.GetOutbox(r.Context(), w, r)
+			if err != nil {
+				panic(err)
+			}
+			if !handled {
+				panic("that's weird...")
+			}
+		})
+		r.Post("/outbox", func(w http.ResponseWriter, r *http.Request) {
+			handled, err := actor.PostOutbox(r.Context(), w, r)
+			if err != nil {
+				panic(err)
+			}
+			if !handled {
+				panic("that's weird...")
+			}
+		})
+	})
 }
