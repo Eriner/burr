@@ -16,6 +16,7 @@ func main() {
 			gen.FeaturePrivacy,
 			gen.FeatureSnapshot,
 			gen.FeatureLock,
+			gen.FeatureVersionedMigration,
 		},
 	}, entc.Extensions(entviz.Extension{})); err != nil {
 		log.Fatalf("running ent codegen: %v", err)
