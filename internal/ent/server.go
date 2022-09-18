@@ -15,7 +15,7 @@ import (
 type Server struct {
 	config `json:"-"`
 	// ID of the ent.
-	ID int `json:"id,omitempty"`
+	ID uint64 `json:"id,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	// UpdatedAt holds the value of the "updated_at" field.
@@ -24,6 +24,31 @@ type Server struct {
 	CreatedBy int `json:"created_by,omitempty"`
 	// UpdatedBy holds the value of the "updated_by" field.
 	UpdatedBy int `json:"updated_by,omitempty"`
+	// The ActivityPub server's domain
+	Domain string `json:"domain,omitempty"`
+	// The last time a valid response or message was recieved from this Server
+	LastSeen time.Time `json:"last_seen,omitempty"`
+	// Edges holds the relations/edges for other nodes in the graph.
+	// The values are being populated by the ServerQuery when eager-loading is set.
+	Edges ServerEdges `json:"edges"`
+}
+
+// ServerEdges holds the relations/edges for other nodes in the graph.
+type ServerEdges struct {
+	// Actors belong to a server
+	Actors []*Actor `json:"actors,omitempty"`
+	// loadedTypes holds the information for reporting if a
+	// type was loaded (or requested) in eager-loading or not.
+	loadedTypes [1]bool
+}
+
+// ActorsOrErr returns the Actors value or an error if the edge
+// was not loaded in eager-loading.
+func (e ServerEdges) ActorsOrErr() ([]*Actor, error) {
+	if e.loadedTypes[0] {
+		return e.Actors, nil
+	}
+	return nil, &NotLoadedError{edge: "actors"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -33,7 +58,9 @@ func (*Server) scanValues(columns []string) ([]interface{}, error) {
 		switch columns[i] {
 		case server.FieldID, server.FieldCreatedBy, server.FieldUpdatedBy:
 			values[i] = new(sql.NullInt64)
-		case server.FieldCreatedAt, server.FieldUpdatedAt:
+		case server.FieldDomain:
+			values[i] = new(sql.NullString)
+		case server.FieldCreatedAt, server.FieldUpdatedAt, server.FieldLastSeen:
 			values[i] = new(sql.NullTime)
 		default:
 			return nil, fmt.Errorf("unexpected column %q for type Server", columns[i])
@@ -55,7 +82,7 @@ func (s *Server) assignValues(columns []string, values []interface{}) error {
 			if !ok {
 				return fmt.Errorf("unexpected type %T for field id", value)
 			}
-			s.ID = int(value.Int64)
+			s.ID = uint64(value.Int64)
 		case server.FieldCreatedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field created_at", values[i])
@@ -80,9 +107,26 @@ func (s *Server) assignValues(columns []string, values []interface{}) error {
 			} else if value.Valid {
 				s.UpdatedBy = int(value.Int64)
 			}
+		case server.FieldDomain:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field domain", values[i])
+			} else if value.Valid {
+				s.Domain = value.String
+			}
+		case server.FieldLastSeen:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field last_seen", values[i])
+			} else if value.Valid {
+				s.LastSeen = value.Time
+			}
 		}
 	}
 	return nil
+}
+
+// QueryActors queries the "actors" edge of the Server entity.
+func (s *Server) QueryActors() *ActorQuery {
+	return (&ServerClient{config: s.config}).QueryActors(s)
 }
 
 // Update returns a builder for updating this Server.
@@ -119,6 +163,12 @@ func (s *Server) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("updated_by=")
 	builder.WriteString(fmt.Sprintf("%v", s.UpdatedBy))
+	builder.WriteString(", ")
+	builder.WriteString("domain=")
+	builder.WriteString(s.Domain)
+	builder.WriteString(", ")
+	builder.WriteString("last_seen=")
+	builder.WriteString(s.LastSeen.Format(time.ANSIC))
 	builder.WriteByte(')')
 	return builder.String()
 }

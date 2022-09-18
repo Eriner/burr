@@ -3,20 +3,387 @@
 package runtime
 
 import (
+	"context"
 	"time"
 
+	"github.com/eriner/burr/internal/ent/actor"
+	"github.com/eriner/burr/internal/ent/event"
+	"github.com/eriner/burr/internal/ent/group"
+	"github.com/eriner/burr/internal/ent/reaction"
 	"github.com/eriner/burr/internal/ent/schema"
 	"github.com/eriner/burr/internal/ent/server"
-	"github.com/eriner/burr/internal/ent/user"
+	"github.com/eriner/burr/internal/ent/session"
+	"github.com/eriner/burr/internal/ent/status"
+
+	"entgo.io/ent"
+	"entgo.io/ent/privacy"
 )
 
 // The init function reads all schema descriptors with runtime code
 // (default values, validators, hooks and policies) and stitches it
 // to their package variables.
 func init() {
+	actorMixin := schema.Actor{}.Mixin()
+	actor.Policy = privacy.NewPolicies(schema.Actor{})
+	actor.Hooks[0] = func(next ent.Mutator) ent.Mutator {
+		return ent.MutateFunc(func(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+			if err := actor.Policy.EvalMutation(ctx, m); err != nil {
+				return nil, err
+			}
+			return next.Mutate(ctx, m)
+		})
+	}
+	actorMixinHooks0 := actorMixin[0].Hooks()
+	actorHooks := schema.Actor{}.Hooks()
+
+	actor.Hooks[1] = actorMixinHooks0[0]
+
+	actor.Hooks[2] = actorHooks[0]
+	actorMixinFields0 := actorMixin[0].Fields()
+	_ = actorMixinFields0
+	actorFields := schema.Actor{}.Fields()
+	_ = actorFields
+	// actorDescCreatedAt is the schema descriptor for created_at field.
+	actorDescCreatedAt := actorMixinFields0[0].Descriptor()
+	// actor.DefaultCreatedAt holds the default value on creation for the created_at field.
+	actor.DefaultCreatedAt = actorDescCreatedAt.Default.(func() time.Time)
+	// actorDescUpdatedAt is the schema descriptor for updated_at field.
+	actorDescUpdatedAt := actorMixinFields0[1].Descriptor()
+	// actor.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	actor.DefaultUpdatedAt = actorDescUpdatedAt.Default.(func() time.Time)
+	// actor.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	actor.UpdateDefaultUpdatedAt = actorDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// actorDescName is the schema descriptor for name field.
+	actorDescName := actorFields[2].Descriptor()
+	// actor.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	actor.NameValidator = func() func(string) error {
+		validators := actorDescName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(name string) error {
+			for _, fn := range fns {
+				if err := fn(name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// actorDescDisplayName is the schema descriptor for display_name field.
+	actorDescDisplayName := actorFields[3].Descriptor()
+	// actor.DefaultDisplayName holds the default value on creation for the display_name field.
+	actor.DefaultDisplayName = actorDescDisplayName.Default.(string)
+	// actor.DisplayNameValidator is a validator for the "display_name" field. It is called by the builders before save.
+	actor.DisplayNameValidator = func() func(string) error {
+		validators := actorDescDisplayName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(display_name string) error {
+			for _, fn := range fns {
+				if err := fn(display_name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// actorDescNote is the schema descriptor for note field.
+	actorDescNote := actorFields[4].Descriptor()
+	// actor.DefaultNote holds the default value on creation for the note field.
+	actor.DefaultNote = actorDescNote.Default.(string)
+	// actor.NoteValidator is a validator for the "note" field. It is called by the builders before save.
+	actor.NoteValidator = actorDescNote.Validators[0].(func(string) error)
+	// actorDescLocked is the schema descriptor for locked field.
+	actorDescLocked := actorFields[5].Descriptor()
+	// actor.DefaultLocked holds the default value on creation for the locked field.
+	actor.DefaultLocked = actorDescLocked.Default.(bool)
+	// actorDescMemorial is the schema descriptor for memorial field.
+	actorDescMemorial := actorFields[6].Descriptor()
+	// actor.DefaultMemorial holds the default value on creation for the memorial field.
+	actor.DefaultMemorial = actorDescMemorial.Default.(bool)
+	// actorDescURL is the schema descriptor for url field.
+	actorDescURL := actorFields[7].Descriptor()
+	// actor.URLValidator is a validator for the "url" field. It is called by the builders before save.
+	actor.URLValidator = func() func(string) error {
+		validators := actorDescURL.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+			validators[2].(func(string) error),
+		}
+		return func(url string) error {
+			for _, fn := range fns {
+				if err := fn(url); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// actorDescPubkey is the schema descriptor for pubkey field.
+	actorDescPubkey := actorFields[8].Descriptor()
+	// actor.DefaultPubkey holds the default value on creation for the pubkey field.
+	actor.DefaultPubkey = actorDescPubkey.Default.([]byte)
+	// actor.PubkeyValidator is a validator for the "pubkey" field. It is called by the builders before save.
+	actor.PubkeyValidator = actorDescPubkey.Validators[0].(func([]byte) error)
+	// actorDescAvatarRemoteURL is the schema descriptor for avatar_remote_url field.
+	actorDescAvatarRemoteURL := actorFields[10].Descriptor()
+	// actor.AvatarRemoteURLValidator is a validator for the "avatar_remote_url" field. It is called by the builders before save.
+	actor.AvatarRemoteURLValidator = func() func(string) error {
+		validators := actorDescAvatarRemoteURL.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(avatar_remote_url string) error {
+			for _, fn := range fns {
+				if err := fn(avatar_remote_url); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// actorDescAvatarLocalFile is the schema descriptor for avatar_local_file field.
+	actorDescAvatarLocalFile := actorFields[11].Descriptor()
+	// actor.AvatarLocalFileValidator is a validator for the "avatar_local_file" field. It is called by the builders before save.
+	actor.AvatarLocalFileValidator = actorDescAvatarLocalFile.Validators[0].(func(string) error)
+	// actorDescHeaderURL is the schema descriptor for header_url field.
+	actorDescHeaderURL := actorFields[13].Descriptor()
+	// actor.HeaderURLValidator is a validator for the "header_url" field. It is called by the builders before save.
+	actor.HeaderURLValidator = func() func(string) error {
+		validators := actorDescHeaderURL.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(header_url string) error {
+			for _, fn := range fns {
+				if err := fn(header_url); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// actorDescHeaderLocalFile is the schema descriptor for header_local_file field.
+	actorDescHeaderLocalFile := actorFields[14].Descriptor()
+	// actor.HeaderLocalFileValidator is a validator for the "header_local_file" field. It is called by the builders before save.
+	actor.HeaderLocalFileValidator = actorDescHeaderLocalFile.Validators[0].(func(string) error)
+	// actorDescLastWebfingerAt is the schema descriptor for last_webfinger_at field.
+	actorDescLastWebfingerAt := actorFields[16].Descriptor()
+	// actor.DefaultLastWebfingerAt holds the default value on creation for the last_webfinger_at field.
+	actor.DefaultLastWebfingerAt = actorDescLastWebfingerAt.Default.(func() time.Time)
+	// actorDescInboxURL is the schema descriptor for inbox_url field.
+	actorDescInboxURL := actorFields[17].Descriptor()
+	// actor.InboxURLValidator is a validator for the "inbox_url" field. It is called by the builders before save.
+	actor.InboxURLValidator = func() func(string) error {
+		validators := actorDescInboxURL.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+			validators[2].(func(string) error),
+		}
+		return func(inbox_url string) error {
+			for _, fn := range fns {
+				if err := fn(inbox_url); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// actorDescOutboxURL is the schema descriptor for outbox_url field.
+	actorDescOutboxURL := actorFields[18].Descriptor()
+	// actor.OutboxURLValidator is a validator for the "outbox_url" field. It is called by the builders before save.
+	actor.OutboxURLValidator = func() func(string) error {
+		validators := actorDescOutboxURL.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+			validators[2].(func(string) error),
+		}
+		return func(outbox_url string) error {
+			for _, fn := range fns {
+				if err := fn(outbox_url); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// actorDescSharedInboxURL is the schema descriptor for shared_inbox_url field.
+	actorDescSharedInboxURL := actorFields[19].Descriptor()
+	// actor.SharedInboxURLValidator is a validator for the "shared_inbox_url" field. It is called by the builders before save.
+	actor.SharedInboxURLValidator = func() func(string) error {
+		validators := actorDescSharedInboxURL.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+			validators[2].(func(string) error),
+		}
+		return func(shared_inbox_url string) error {
+			for _, fn := range fns {
+				if err := fn(shared_inbox_url); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// actorDescFollowersURL is the schema descriptor for followers_url field.
+	actorDescFollowersURL := actorFields[20].Descriptor()
+	// actor.FollowersURLValidator is a validator for the "followers_url" field. It is called by the builders before save.
+	actor.FollowersURLValidator = func() func(string) error {
+		validators := actorDescFollowersURL.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+			validators[2].(func(string) error),
+		}
+		return func(followers_url string) error {
+			for _, fn := range fns {
+				if err := fn(followers_url); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// actorDescPasswordHash is the schema descriptor for passwordHash field.
+	actorDescPasswordHash := actorFields[25].Descriptor()
+	// actor.PasswordHashValidator is a validator for the "passwordHash" field. It is called by the builders before save.
+	actor.PasswordHashValidator = func() func([]byte) error {
+		validators := actorDescPasswordHash.Validators
+		fns := [...]func([]byte) error{
+			validators[0].(func([]byte) error),
+			validators[1].(func([]byte) error),
+		}
+		return func(passwordHash []byte) error {
+			for _, fn := range fns {
+				if err := fn(passwordHash); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// actorDescRole is the schema descriptor for role field.
+	actorDescRole := actorFields[27].Descriptor()
+	// actor.DefaultRole holds the default value on creation for the role field.
+	actor.DefaultRole = actorDescRole.Default.(uint64)
+	// actorDescBadge is the schema descriptor for badge field.
+	actorDescBadge := actorFields[28].Descriptor()
+	// actor.DefaultBadge holds the default value on creation for the badge field.
+	actor.DefaultBadge = actorDescBadge.Default.(uint64)
+	eventMixin := schema.Event{}.Mixin()
+	event.Policy = privacy.NewPolicies(schema.Event{})
+	event.Hooks[0] = func(next ent.Mutator) ent.Mutator {
+		return ent.MutateFunc(func(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+			if err := event.Policy.EvalMutation(ctx, m); err != nil {
+				return nil, err
+			}
+			return next.Mutate(ctx, m)
+		})
+	}
+	eventMixinHooks0 := eventMixin[0].Hooks()
+	eventHooks := schema.Event{}.Hooks()
+
+	event.Hooks[1] = eventMixinHooks0[0]
+
+	event.Hooks[2] = eventHooks[0]
+	eventMixinFields0 := eventMixin[0].Fields()
+	_ = eventMixinFields0
+	eventFields := schema.Event{}.Fields()
+	_ = eventFields
+	// eventDescCreatedAt is the schema descriptor for created_at field.
+	eventDescCreatedAt := eventMixinFields0[0].Descriptor()
+	// event.DefaultCreatedAt holds the default value on creation for the created_at field.
+	event.DefaultCreatedAt = eventDescCreatedAt.Default.(func() time.Time)
+	// eventDescUpdatedAt is the schema descriptor for updated_at field.
+	eventDescUpdatedAt := eventMixinFields0[1].Descriptor()
+	// event.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	event.DefaultUpdatedAt = eventDescUpdatedAt.Default.(func() time.Time)
+	// event.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	event.UpdateDefaultUpdatedAt = eventDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// eventDescDisplayName is the schema descriptor for display_name field.
+	eventDescDisplayName := eventFields[1].Descriptor()
+	// event.DisplayNameValidator is a validator for the "display_name" field. It is called by the builders before save.
+	event.DisplayNameValidator = eventDescDisplayName.Validators[0].(func(string) error)
+	groupMixin := schema.Group{}.Mixin()
+	group.Policy = privacy.NewPolicies(schema.Group{})
+	group.Hooks[0] = func(next ent.Mutator) ent.Mutator {
+		return ent.MutateFunc(func(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+			if err := group.Policy.EvalMutation(ctx, m); err != nil {
+				return nil, err
+			}
+			return next.Mutate(ctx, m)
+		})
+	}
+	groupMixinHooks0 := groupMixin[0].Hooks()
+
+	group.Hooks[1] = groupMixinHooks0[0]
+	groupMixinFields0 := groupMixin[0].Fields()
+	_ = groupMixinFields0
+	groupFields := schema.Group{}.Fields()
+	_ = groupFields
+	// groupDescCreatedAt is the schema descriptor for created_at field.
+	groupDescCreatedAt := groupMixinFields0[0].Descriptor()
+	// group.DefaultCreatedAt holds the default value on creation for the created_at field.
+	group.DefaultCreatedAt = groupDescCreatedAt.Default.(func() time.Time)
+	// groupDescUpdatedAt is the schema descriptor for updated_at field.
+	groupDescUpdatedAt := groupMixinFields0[1].Descriptor()
+	// group.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	group.DefaultUpdatedAt = groupDescUpdatedAt.Default.(func() time.Time)
+	// group.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	group.UpdateDefaultUpdatedAt = groupDescUpdatedAt.UpdateDefault.(func() time.Time)
+	reactionMixin := schema.Reaction{}.Mixin()
+	reaction.Policy = privacy.NewPolicies(schema.Reaction{})
+	reaction.Hooks[0] = func(next ent.Mutator) ent.Mutator {
+		return ent.MutateFunc(func(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+			if err := reaction.Policy.EvalMutation(ctx, m); err != nil {
+				return nil, err
+			}
+			return next.Mutate(ctx, m)
+		})
+	}
+	reactionMixinHooks0 := reactionMixin[0].Hooks()
+
+	reaction.Hooks[1] = reactionMixinHooks0[0]
+	reactionMixinFields0 := reactionMixin[0].Fields()
+	_ = reactionMixinFields0
+	reactionFields := schema.Reaction{}.Fields()
+	_ = reactionFields
+	// reactionDescCreatedAt is the schema descriptor for created_at field.
+	reactionDescCreatedAt := reactionMixinFields0[0].Descriptor()
+	// reaction.DefaultCreatedAt holds the default value on creation for the created_at field.
+	reaction.DefaultCreatedAt = reactionDescCreatedAt.Default.(func() time.Time)
+	// reactionDescUpdatedAt is the schema descriptor for updated_at field.
+	reactionDescUpdatedAt := reactionMixinFields0[1].Descriptor()
+	// reaction.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	reaction.DefaultUpdatedAt = reactionDescUpdatedAt.Default.(func() time.Time)
+	// reaction.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	reaction.UpdateDefaultUpdatedAt = reactionDescUpdatedAt.UpdateDefault.(func() time.Time)
 	serverMixin := schema.Server{}.Mixin()
+	server.Policy = privacy.NewPolicies(schema.Server{})
+	server.Hooks[0] = func(next ent.Mutator) ent.Mutator {
+		return ent.MutateFunc(func(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+			if err := server.Policy.EvalMutation(ctx, m); err != nil {
+				return nil, err
+			}
+			return next.Mutate(ctx, m)
+		})
+	}
 	serverMixinHooks0 := serverMixin[0].Hooks()
-	server.Hooks[0] = serverMixinHooks0[0]
+	serverHooks := schema.Server{}.Hooks()
+
+	server.Hooks[1] = serverMixinHooks0[0]
+
+	server.Hooks[2] = serverHooks[0]
 	serverMixinFields0 := serverMixin[0].Fields()
 	_ = serverMixinFields0
 	serverFields := schema.Server{}.Fields()
@@ -31,66 +398,80 @@ func init() {
 	server.DefaultUpdatedAt = serverDescUpdatedAt.Default.(func() time.Time)
 	// server.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	server.UpdateDefaultUpdatedAt = serverDescUpdatedAt.UpdateDefault.(func() time.Time)
-	userMixin := schema.User{}.Mixin()
-	userMixinHooks0 := userMixin[0].Hooks()
-	user.Hooks[0] = userMixinHooks0[0]
-	userMixinFields0 := userMixin[0].Fields()
-	_ = userMixinFields0
-	userFields := schema.User{}.Fields()
-	_ = userFields
-	// userDescCreatedAt is the schema descriptor for created_at field.
-	userDescCreatedAt := userMixinFields0[0].Descriptor()
-	// user.DefaultCreatedAt holds the default value on creation for the created_at field.
-	user.DefaultCreatedAt = userDescCreatedAt.Default.(func() time.Time)
-	// userDescUpdatedAt is the schema descriptor for updated_at field.
-	userDescUpdatedAt := userMixinFields0[1].Descriptor()
-	// user.DefaultUpdatedAt holds the default value on creation for the updated_at field.
-	user.DefaultUpdatedAt = userDescUpdatedAt.Default.(func() time.Time)
-	// user.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
-	user.UpdateDefaultUpdatedAt = userDescUpdatedAt.UpdateDefault.(func() time.Time)
-	// userDescName is the schema descriptor for name field.
-	userDescName := userFields[0].Descriptor()
-	// user.DefaultName holds the default value on creation for the name field.
-	user.DefaultName = userDescName.Default.(string)
-	// user.NameValidator is a validator for the "name" field. It is called by the builders before save.
-	user.NameValidator = userDescName.Validators[0].(func(string) error)
-	// userDescEmail is the schema descriptor for email field.
-	userDescEmail := userFields[1].Descriptor()
-	// user.EmailValidator is a validator for the "email" field. It is called by the builders before save.
-	user.EmailValidator = func() func(string) error {
-		validators := userDescEmail.Validators
-		fns := [...]func(string) error{
-			validators[0].(func(string) error),
-			validators[1].(func(string) error),
-		}
-		return func(email string) error {
-			for _, fn := range fns {
-				if err := fn(email); err != nil {
-					return err
-				}
+	// serverDescDomain is the schema descriptor for domain field.
+	serverDescDomain := serverFields[1].Descriptor()
+	// server.DomainValidator is a validator for the "domain" field. It is called by the builders before save.
+	server.DomainValidator = serverDescDomain.Validators[0].(func(string) error)
+	// serverDescLastSeen is the schema descriptor for last_seen field.
+	serverDescLastSeen := serverFields[2].Descriptor()
+	// server.DefaultLastSeen holds the default value on creation for the last_seen field.
+	server.DefaultLastSeen = serverDescLastSeen.Default.(func() time.Time)
+	sessionMixin := schema.Session{}.Mixin()
+	session.Policy = privacy.NewPolicies(schema.Session{})
+	session.Hooks[0] = func(next ent.Mutator) ent.Mutator {
+		return ent.MutateFunc(func(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+			if err := session.Policy.EvalMutation(ctx, m); err != nil {
+				return nil, err
 			}
-			return nil
-		}
-	}()
-	// userDescPasswordHash is the schema descriptor for passwordHash field.
-	userDescPasswordHash := userFields[2].Descriptor()
-	// user.PasswordHashValidator is a validator for the "passwordHash" field. It is called by the builders before save.
-	user.PasswordHashValidator = func() func([]byte) error {
-		validators := userDescPasswordHash.Validators
-		fns := [...]func([]byte) error{
-			validators[0].(func([]byte) error),
-			validators[1].(func([]byte) error),
-			validators[2].(func([]byte) error),
-		}
-		return func(passwordHash []byte) error {
-			for _, fn := range fns {
-				if err := fn(passwordHash); err != nil {
-					return err
-				}
+			return next.Mutate(ctx, m)
+		})
+	}
+	sessionMixinHooks0 := sessionMixin[0].Hooks()
+	sessionHooks := schema.Session{}.Hooks()
+
+	session.Hooks[1] = sessionMixinHooks0[0]
+
+	session.Hooks[2] = sessionHooks[0]
+	sessionMixinFields0 := sessionMixin[0].Fields()
+	_ = sessionMixinFields0
+	sessionFields := schema.Session{}.Fields()
+	_ = sessionFields
+	// sessionDescCreatedAt is the schema descriptor for created_at field.
+	sessionDescCreatedAt := sessionMixinFields0[0].Descriptor()
+	// session.DefaultCreatedAt holds the default value on creation for the created_at field.
+	session.DefaultCreatedAt = sessionDescCreatedAt.Default.(func() time.Time)
+	// sessionDescUpdatedAt is the schema descriptor for updated_at field.
+	sessionDescUpdatedAt := sessionMixinFields0[1].Descriptor()
+	// session.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	session.DefaultUpdatedAt = sessionDescUpdatedAt.Default.(func() time.Time)
+	// session.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	session.UpdateDefaultUpdatedAt = sessionDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// sessionDescToken is the schema descriptor for token field.
+	sessionDescToken := sessionFields[3].Descriptor()
+	// session.DefaultToken holds the default value on creation for the token field.
+	session.DefaultToken = sessionDescToken.Default.(func() string)
+	// session.TokenValidator is a validator for the "token" field. It is called by the builders before save.
+	session.TokenValidator = sessionDescToken.Validators[0].(func(string) error)
+	statusMixin := schema.Status{}.Mixin()
+	status.Policy = privacy.NewPolicies(schema.Status{})
+	status.Hooks[0] = func(next ent.Mutator) ent.Mutator {
+		return ent.MutateFunc(func(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+			if err := status.Policy.EvalMutation(ctx, m); err != nil {
+				return nil, err
 			}
-			return nil
-		}
-	}()
+			return next.Mutate(ctx, m)
+		})
+	}
+	statusMixinHooks0 := statusMixin[0].Hooks()
+	statusHooks := schema.Status{}.Hooks()
+
+	status.Hooks[1] = statusMixinHooks0[0]
+
+	status.Hooks[2] = statusHooks[0]
+	statusMixinFields0 := statusMixin[0].Fields()
+	_ = statusMixinFields0
+	statusFields := schema.Status{}.Fields()
+	_ = statusFields
+	// statusDescCreatedAt is the schema descriptor for created_at field.
+	statusDescCreatedAt := statusMixinFields0[0].Descriptor()
+	// status.DefaultCreatedAt holds the default value on creation for the created_at field.
+	status.DefaultCreatedAt = statusDescCreatedAt.Default.(func() time.Time)
+	// statusDescUpdatedAt is the schema descriptor for updated_at field.
+	statusDescUpdatedAt := statusMixinFields0[1].Descriptor()
+	// status.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	status.DefaultUpdatedAt = statusDescUpdatedAt.Default.(func() time.Time)
+	// status.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	status.UpdateDefaultUpdatedAt = statusDescUpdatedAt.UpdateDefault.(func() time.Time)
 }
 
 const (

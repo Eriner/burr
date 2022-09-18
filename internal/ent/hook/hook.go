@@ -9,6 +9,58 @@ import (
 	"github.com/eriner/burr/internal/ent"
 )
 
+// The ActorFunc type is an adapter to allow the use of ordinary
+// function as Actor mutator.
+type ActorFunc func(context.Context, *ent.ActorMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f ActorFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	mv, ok := m.(*ent.ActorMutation)
+	if !ok {
+		return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ActorMutation", m)
+	}
+	return f(ctx, mv)
+}
+
+// The EventFunc type is an adapter to allow the use of ordinary
+// function as Event mutator.
+type EventFunc func(context.Context, *ent.EventMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f EventFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	mv, ok := m.(*ent.EventMutation)
+	if !ok {
+		return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.EventMutation", m)
+	}
+	return f(ctx, mv)
+}
+
+// The GroupFunc type is an adapter to allow the use of ordinary
+// function as Group mutator.
+type GroupFunc func(context.Context, *ent.GroupMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f GroupFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	mv, ok := m.(*ent.GroupMutation)
+	if !ok {
+		return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.GroupMutation", m)
+	}
+	return f(ctx, mv)
+}
+
+// The ReactionFunc type is an adapter to allow the use of ordinary
+// function as Reaction mutator.
+type ReactionFunc func(context.Context, *ent.ReactionMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f ReactionFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	mv, ok := m.(*ent.ReactionMutation)
+	if !ok {
+		return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ReactionMutation", m)
+	}
+	return f(ctx, mv)
+}
+
 // The ServerFunc type is an adapter to allow the use of ordinary
 // function as Server mutator.
 type ServerFunc func(context.Context, *ent.ServerMutation) (ent.Value, error)
@@ -22,15 +74,28 @@ func (f ServerFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, erro
 	return f(ctx, mv)
 }
 
-// The UserFunc type is an adapter to allow the use of ordinary
-// function as User mutator.
-type UserFunc func(context.Context, *ent.UserMutation) (ent.Value, error)
+// The SessionFunc type is an adapter to allow the use of ordinary
+// function as Session mutator.
+type SessionFunc func(context.Context, *ent.SessionMutation) (ent.Value, error)
 
 // Mutate calls f(ctx, m).
-func (f UserFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
-	mv, ok := m.(*ent.UserMutation)
+func (f SessionFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	mv, ok := m.(*ent.SessionMutation)
 	if !ok {
-		return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.UserMutation", m)
+		return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.SessionMutation", m)
+	}
+	return f(ctx, mv)
+}
+
+// The StatusFunc type is an adapter to allow the use of ordinary
+// function as Status mutator.
+type StatusFunc func(context.Context, *ent.StatusMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f StatusFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	mv, ok := m.(*ent.StatusMutation)
+	if !ok {
+		return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.StatusMutation", m)
 	}
 	return f(ctx, mv)
 }

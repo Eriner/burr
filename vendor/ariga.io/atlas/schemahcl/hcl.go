@@ -19,10 +19,8 @@ import (
 	"github.com/zclconf/go-cty/cty"
 )
 
-var (
-	// Marshal returns the Atlas HCL encoding of v.
-	Marshal = MarshalerFunc(New().MarshalSpec)
-)
+// Marshal returns the Atlas HCL encoding of v.
+var Marshal = MarshalerFunc(New().MarshalSpec)
 
 type (
 	// State is used to evaluate and marshal Atlas HCL documents and stores a configuration for these operations.
@@ -32,22 +30,22 @@ type (
 	// Evaluator is the interface that wraps the Eval function.
 	Evaluator interface {
 		// Eval evaluates parsed HCL files using input variables into a schema.Realm.
-		Eval(*hclparse.Parser, interface{}, map[string]string) error
+		Eval(*hclparse.Parser, any, map[string]string) error
 	}
 	// EvalFunc is an adapter that allows the use of an ordinary function as an Evaluator.
-	EvalFunc func(*hclparse.Parser, interface{}, map[string]string) error
+	EvalFunc func(*hclparse.Parser, any, map[string]string) error
 	// Marshaler is the interface that wraps the MarshalSpec function.
 	Marshaler interface {
 		// MarshalSpec marshals the provided input into a valid Atlas HCL document.
-		MarshalSpec(interface{}) ([]byte, error)
+		MarshalSpec(any) ([]byte, error)
 	}
 	// MarshalerFunc is the function type that is implemented by the MarshalSpec
 	// method of the Marshaler interface.
-	MarshalerFunc func(interface{}) ([]byte, error)
+	MarshalerFunc func(any) ([]byte, error)
 )
 
 // MarshalSpec implements Marshaler for Atlas HCL documents.
-func (s *State) MarshalSpec(v interface{}) ([]byte, error) {
+func (s *State) MarshalSpec(v any) ([]byte, error) {
 	r := &Resource{}
 	if err := r.Scan(v); err != nil {
 		return nil, fmt.Errorf("schemahcl: failed scanning %T to resource: %w", v, err)
@@ -57,7 +55,7 @@ func (s *State) MarshalSpec(v interface{}) ([]byte, error) {
 
 // EvalFiles evaluates the files in the provided paths using the input variables and
 // populates v with the result.
-func (s *State) EvalFiles(paths []string, v interface{}, input map[string]string) error {
+func (s *State) EvalFiles(paths []string, v any, input map[string]string) error {
 	parser := hclparse.NewParser()
 	for _, path := range paths {
 		if _, diag := parser.ParseHCLFile(path); diag.HasErrors() {
@@ -69,7 +67,7 @@ func (s *State) EvalFiles(paths []string, v interface{}, input map[string]string
 
 // Eval evaluates the parsed HCL documents using the input variables and populates v
 // using the result.
-func (s *State) Eval(parsed *hclparse.Parser, v interface{}, input map[string]string) error {
+func (s *State) Eval(parsed *hclparse.Parser, v any, input map[string]string) error {
 	ctx := s.config.newCtx()
 	reg := &blockDef{
 		fields:   make(map[string]struct{}),
@@ -128,7 +126,7 @@ func (s *State) Eval(parsed *hclparse.Parser, v interface{}, input map[string]st
 
 // EvalBytes evaluates the data byte-slice as an Atlas HCL document using the input variables
 // and stores the result in v.
-func (s *State) EvalBytes(data []byte, v interface{}, input map[string]string) error {
+func (s *State) EvalBytes(data []byte, v any, input map[string]string) error {
 	parser := hclparse.NewParser()
 	if _, diag := parser.ParseHCL(data, ""); diag.HasErrors() {
 		return diag
@@ -151,7 +149,6 @@ func (r addrRef) patch(resource *Resource) error {
 		if ref, ok := attr.V.(*Ref); ok {
 			referenced, ok := cp[ref.V]
 			if !ok {
-				fmt.Println(cp)
 				return fmt.Errorf("broken reference to %q", ref.V)
 			}
 			if name, err := referenced.FinalName(); err == nil {
@@ -175,7 +172,7 @@ func (r addrRef) copy() addrRef {
 	return n
 }
 
-// load loads the references from the children of the resource.
+// load the references from the children of the resource.
 func (r addrRef) load(res *Resource, track string) addrRef {
 	unlabeled := 0
 	for _, ch := range res.Children {
@@ -251,7 +248,7 @@ func (s *State) toAttrs(ctx *hcl.EvalContext, hclAttrs hclsyntax.Attributes, sco
 		at := &Attr{K: hclAttr.Name}
 		value, diag := hclAttr.Expr.Value(ctx)
 		if diag.HasErrors() {
-			return nil, diag
+			return nil, s.typeError(diag)
 		}
 		var err error
 		switch {
@@ -276,6 +273,29 @@ func (s *State) toAttrs(ctx *hcl.EvalContext, hclAttrs hclsyntax.Attributes, sco
 		return attrs[i].K < attrs[j].K
 	})
 	return attrs, nil
+}
+
+// typeError improves diagnostic reporting in case of parse error.
+func (s *State) typeError(diag hcl.Diagnostics) error {
+	for _, d := range diag {
+		switch e := d.Expression.(type) {
+		case *hclsyntax.FunctionCallExpr:
+			if d.Summary != "Call to unknown function" {
+				continue
+			}
+			if t, ok := s.findTypeSpec(e.Name); ok && len(t.Attributes) == 0 {
+				d.Detail = fmt.Sprintf("Type %q does not accept attributes", t.Name)
+			}
+		case *hclsyntax.ScopeTraversalExpr:
+			if d.Summary != "Unknown variable" {
+				continue
+			}
+			if t, ok := s.findTypeSpec(e.Traversal.RootName()); ok && len(t.Attributes) > 0 {
+				d.Detail = fmt.Sprintf("Type %q requires at least 1 argument", t.Name)
+			}
+		}
+	}
+	return diag
 }
 
 func isRef(v cty.Value) bool {
@@ -403,12 +423,10 @@ func (s *State) writeAttr(attr *Attr, body *hclwrite.Body) error {
 	attr = normalizeLiterals(attr)
 	switch v := attr.V.(type) {
 	case *Ref:
-		expr := strings.ReplaceAll(v.V, "$", "")
-		body.SetAttributeRaw(attr.K, hclRawTokens(expr))
+		body.SetAttributeRaw(attr.K, hclRefTokens(v.V))
 	case *Type:
 		if v.IsRef {
-			expr := strings.ReplaceAll(v.T, "$", "")
-			body.SetAttributeRaw(attr.K, hclRawTokens(expr))
+			body.SetAttributeRaw(attr.K, hclRefTokens(v.T))
 			break
 		}
 		spec, ok := s.findTypeSpec(v.T)
@@ -434,19 +452,18 @@ func (s *State) writeAttr(attr *Attr, body *hclwrite.Body) error {
 		if v.V == nil {
 			return nil
 		}
-		lst := make([]string, 0, len(v.V))
+		lst := make([]hclwrite.Tokens, 0, len(v.V))
 		for _, item := range v.V {
 			switch v := item.(type) {
 			case *Ref:
-				expr := strings.ReplaceAll(v.V, "$", "")
-				lst = append(lst, expr)
+				lst = append(lst, hclRefTokens(v.V))
 			case *LiteralValue:
-				lst = append(lst, v.V)
+				lst = append(lst, hclRawTokens(v.V))
 			default:
 				return fmt.Errorf("cannot write elem type %T of attr %q to HCL list", v, attr)
 			}
 		}
-		body.SetAttributeRaw(attr.K, hclRawList(lst))
+		body.SetAttributeRaw(attr.K, hclList(lst))
 	default:
 		return fmt.Errorf("schemacl: unknown literal type %T", v)
 	}
@@ -519,6 +536,39 @@ func findAttr(attrs []*Attr, k string) (*Attr, bool) {
 	return nil, false
 }
 
+func hclRefTokens(ref string) hclwrite.Tokens {
+	var t []*hclwrite.Token
+	for i, s := range strings.Split(ref, ".") {
+		// Ignore the first $ as token for reference.
+		if len(s) > 1 && s[0] == '$' {
+			s = s[1:]
+		}
+		switch {
+		case i == 0:
+			t = append(t, hclRawTokens(s)...)
+		case hclsyntax.ValidIdentifier(s):
+			t = append(t, &hclwrite.Token{
+				Type:  hclsyntax.TokenDot,
+				Bytes: []byte{'.'},
+			}, &hclwrite.Token{
+				Type:  hclsyntax.TokenIdent,
+				Bytes: []byte(s),
+			})
+		default:
+			t = append(t, &hclwrite.Token{
+				Type:  hclsyntax.TokenOBrack,
+				Bytes: []byte{'['},
+			})
+			t = append(t, hclwrite.TokensForValue(cty.StringVal(s))...)
+			t = append(t, &hclwrite.Token{
+				Type:  hclsyntax.TokenCBrack,
+				Bytes: []byte{']'},
+			})
+		}
+	}
+	return t
+}
+
 func hclRawTokens(s string) hclwrite.Tokens {
 	return hclwrite.Tokens{
 		&hclwrite.Token{
@@ -528,7 +578,7 @@ func hclRawTokens(s string) hclwrite.Tokens {
 	}
 }
 
-func hclRawList(items []string) hclwrite.Tokens {
+func hclList(items []hclwrite.Tokens) hclwrite.Tokens {
 	t := hclwrite.Tokens{&hclwrite.Token{
 		Type:  hclsyntax.TokenOBrack,
 		Bytes: []byte("["),
@@ -537,7 +587,7 @@ func hclRawList(items []string) hclwrite.Tokens {
 		if i > 0 {
 			t = append(t, &hclwrite.Token{Type: hclsyntax.TokenComma, Bytes: []byte(",")})
 		}
-		t = append(t, &hclwrite.Token{Type: hclsyntax.TokenIdent, Bytes: []byte(item)})
+		t = append(t, item...)
 	}
 	t = append(t, &hclwrite.Token{
 		Type:  hclsyntax.TokenCBrack,
@@ -547,6 +597,6 @@ func hclRawList(items []string) hclwrite.Tokens {
 }
 
 // Eval implements the Evaluator interface.
-func (f EvalFunc) Eval(p *hclparse.Parser, i interface{}, input map[string]string) error {
+func (f EvalFunc) Eval(p *hclparse.Parser, i any, input map[string]string) error {
 	return f(p, i, input)
 }

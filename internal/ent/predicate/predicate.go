@@ -6,8 +6,23 @@ import (
 	"entgo.io/ent/dialect/sql"
 )
 
+// Actor is the predicate function for actor builders.
+type Actor func(*sql.Selector)
+
+// Event is the predicate function for event builders.
+type Event func(*sql.Selector)
+
+// Group is the predicate function for group builders.
+type Group func(*sql.Selector)
+
+// Reaction is the predicate function for reaction builders.
+type Reaction func(*sql.Selector)
+
 // Server is the predicate function for server builders.
 type Server func(*sql.Selector)
 
-// User is the predicate function for user builders.
-type User func(*sql.Selector)
+// Session is the predicate function for session builders.
+type Session func(*sql.Selector)
+
+// Status is the predicate function for status builders.
+type Status func(*sql.Selector)

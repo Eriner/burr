@@ -13,10 +13,38 @@ import (
 	"unicode/utf8"
 )
 
+// Stmt represents a scanned statement text along with its
+// position in the file and associated comments group.
+type Stmt struct {
+	Pos      int      // statement position
+	Text     string   // statement text
+	Comments []string // associated comments
+}
+
+// Directive returns all directive comments with the given name.
+// See: pkg.go.dev/cmd/compile#hdr-Compiler_Directives.
+func (s *Stmt) Directive(name string) (ds []string) {
+	for _, c := range s.Comments {
+		switch {
+		case strings.HasPrefix(c, "/*") && !strings.Contains(c, "\n"):
+			if d, ok := directive(strings.TrimSuffix(c, "*/"), name, "/*"); ok {
+				ds = append(ds, d)
+			}
+		default:
+			for _, p := range []string{"#", "--", "-- "} {
+				if d, ok := directive(c, name, p); ok {
+					ds = append(ds, d)
+				}
+			}
+		}
+	}
+	return
+}
+
 // stmts provides a generic implementation for extracting
 // SQL statements from the given file contents.
-func stmts(input string) ([]string, error) {
-	var stmts []string
+func stmts(input string) ([]*Stmt, error) {
+	var stmts []*Stmt
 	l, err := newLex(input)
 	if err != nil {
 		return nil, err
@@ -34,82 +62,79 @@ func stmts(input string) ([]string, error) {
 }
 
 type lex struct {
-	input string
-	pos   int    // current position.
-	width int    // size of latest rune.
-	depth int    // depth of parentheses.
-	delim string // configured delimiter.
+	input    string
+	pos      int      // current and real position
+	total    int      // total bytes scanned so far
+	width    int      // size of latest rune
+	depth    int      // depth of parentheses
+	delim    string   // configured delimiter
+	comments []string // collected comments
 }
 
 const (
-	eos          = -1
-	delimiter    = ";"
-	delimComment = "-- atlas:delimiter"
+	eos       = -1
+	delimiter = ";"
 )
 
 func newLex(input string) (*lex, error) {
 	delim := delimiter
-	input = strings.TrimSpace(input)
-	if strings.HasPrefix(input, delimComment) {
-		input = input[len(delimComment):]
-		if !strings.HasPrefix(input, " ") {
-			return nil, fmt.Errorf("expect space after %q, got: %s", delimComment, input[:1])
-		}
-		input = strings.TrimSpace(input)
-		i := strings.Index(input, "\n")
-		if i == -1 {
+	if d, ok := directive(input, directiveDelimiter, directivePrefixSQL); ok {
+		if d == "" {
 			return nil, errors.New("empty delimiter")
 		}
+		parts := strings.SplitN(input, "\n", 2)
+		if len(parts) == 1 {
+			return nil, fmt.Errorf("not input found after delimiter %q", d)
+		}
 		// Unescape delimiters. e.g. "\\n" => "\n".
-		delim = strings.NewReplacer(`\n`, "\n", `\r`, "\r", `\t`, "\t").
-			Replace(input[:i])
-		input = strings.TrimSpace(input[i+1:])
+		delim = strings.NewReplacer(`\n`, "\n", `\r`, "\r", `\t`, "\t").Replace(d)
+		input = parts[1]
 	}
 	l := &lex{input: input, delim: delim}
 	return l, nil
 }
 
-func (l *lex) stmt() (stmt string, err error) {
-	defer func() {
-		l.input = l.input[l.pos:]
-		l.pos = 0
-		// Trim custom delimiter.
-		if l.delim != delimiter {
-			stmt = strings.TrimSuffix(stmt, l.delim)
-		}
-	}()
+func (l *lex) stmt() (*Stmt, error) {
+	var text string
 	// Trim trailing whitespace.
 	l.skipSpaces()
+Scan:
 	for {
 		switch r := l.next(); {
 		case r == eos:
 			if l.depth > 0 {
-				return "", errors.New("unclosed parentheses")
+				return nil, errors.New("unclosed parentheses")
 			}
 			if l.pos > 0 {
-				return l.input, nil
+				text = l.input
+				break Scan
 			}
-			return "", io.EOF
+			return nil, io.EOF
 		case r == '(':
 			l.depth++
 		case r == ')':
 			if l.depth == 0 {
-				return "", fmt.Errorf("unexpected ')' at position %d", l.pos)
+				return nil, fmt.Errorf("unexpected ')' at position %d", l.pos)
 			}
 			l.depth--
 		case r == '\'', r == '"', r == '`':
 			if err := l.skipQuote(r); err != nil {
-				return "", err
+				return nil, err
 			}
-		case r == '-' && l.next() == '-':
-			l.skipComment("--", "\n")
-		case r == '/' && l.next() == '*':
-			l.skipComment("/*", "*/")
+		// Delimiters take precedence over comments.
 		case strings.HasPrefix(l.input[l.pos-l.width:], l.delim) && l.depth == 0:
-			l.pos += len(l.delim) - l.width
-			return l.input[:l.pos], nil
+			l.addPos(len(l.delim) - l.width)
+			text = l.input[:l.pos]
+			break Scan
+		case r == '#':
+			l.comment("#", "\n")
+		case r == '-' && l.next() == '-':
+			l.comment("--", "\n")
+		case r == '/' && l.next() == '*':
+			l.comment("/*", "*/")
 		}
 	}
+	return l.emit(text), nil
 }
 
 func (l *lex) next() rune {
@@ -117,9 +142,14 @@ func (l *lex) next() rune {
 		return eos
 	}
 	r, w := utf8.DecodeRuneInString(l.input[l.pos:])
-	l.pos += w
 	l.width = w
+	l.addPos(w)
 	return r
+}
+
+func (l *lex) addPos(p int) {
+	l.pos += p
+	l.total += p
 }
 
 func (l *lex) skipQuote(quote rune) error {
@@ -135,23 +165,45 @@ func (l *lex) skipQuote(quote rune) error {
 	}
 }
 
-func (l *lex) skipComment(left, right string) {
+func (l *lex) comment(left, right string) {
 	i := strings.Index(l.input[l.pos:], right)
 	// Not a comment.
 	if i == -1 {
 		return
 	}
-	// If we did not scan any statement
-	// characters, it can be skipped.
-	if l.pos == len(left) {
-		l.input = l.input[l.pos+i+len(right):]
-		l.pos = 0
-		l.skipSpaces()
-	} else {
-		l.pos += i + len(right)
+	// If the comment reside inside a statement, collect it.
+	if l.pos != len(left) {
+		l.addPos(i + len(right))
+		return
 	}
+	l.addPos(i + len(right))
+	// If we did not scan any statement characters, it
+	// can be skipped and stored in the comments group.
+	l.comments = append(l.comments, l.input[:l.pos])
+	l.input = l.input[l.pos:]
+	l.pos = 0
+	// Double \n separate the comments group from the statement.
+	if strings.HasPrefix(l.input, "\n\n") || right == "\n" && strings.HasPrefix(l.input, "\n") {
+		l.comments = nil
+	}
+	l.skipSpaces()
 }
 
 func (l *lex) skipSpaces() {
+	n := len(l.input)
 	l.input = strings.TrimLeftFunc(l.input, unicode.IsSpace)
+	l.total += n - len(l.input)
+}
+
+func (l *lex) emit(text string) *Stmt {
+	s := &Stmt{Pos: l.total - len(text), Text: text, Comments: l.comments}
+	l.input = l.input[l.pos:]
+	l.pos = 0
+	l.comments = nil
+	// Trim custom delimiter.
+	if l.delim != delimiter {
+		s.Text = strings.TrimSuffix(s.Text, l.delim)
+	}
+	s.Text = strings.TrimSpace(s.Text)
+	return s
 }

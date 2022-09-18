@@ -4,6 +4,8 @@ package ent
 
 import (
 	"context"
+	"database/sql/driver"
+	"errors"
 	"fmt"
 	"math"
 
@@ -11,6 +13,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/eriner/burr/internal/ent/actor"
 	"github.com/eriner/burr/internal/ent/predicate"
 	"github.com/eriner/burr/internal/ent/server"
 )
@@ -24,6 +27,7 @@ type ServerQuery struct {
 	order      []OrderFunc
 	fields     []string
 	predicates []predicate.Server
+	withActors *ActorQuery
 	modifiers  []func(*sql.Selector)
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
@@ -61,6 +65,28 @@ func (sq *ServerQuery) Order(o ...OrderFunc) *ServerQuery {
 	return sq
 }
 
+// QueryActors chains the current query on the "actors" edge.
+func (sq *ServerQuery) QueryActors() *ActorQuery {
+	query := &ActorQuery{config: sq.config}
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := sq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := sq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(server.Table, server.FieldID, selector),
+			sqlgraph.To(actor.Table, actor.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, server.ActorsTable, server.ActorsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(sq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
 // First returns the first Server entity from the query.
 // Returns a *NotFoundError when no Server was found.
 func (sq *ServerQuery) First(ctx context.Context) (*Server, error) {
@@ -85,8 +111,8 @@ func (sq *ServerQuery) FirstX(ctx context.Context) *Server {
 
 // FirstID returns the first Server ID from the query.
 // Returns a *NotFoundError when no Server ID was found.
-func (sq *ServerQuery) FirstID(ctx context.Context) (id int, err error) {
-	var ids []int
+func (sq *ServerQuery) FirstID(ctx context.Context) (id uint64, err error) {
+	var ids []uint64
 	if ids, err = sq.Limit(1).IDs(ctx); err != nil {
 		return
 	}
@@ -98,7 +124,7 @@ func (sq *ServerQuery) FirstID(ctx context.Context) (id int, err error) {
 }
 
 // FirstIDX is like FirstID, but panics if an error occurs.
-func (sq *ServerQuery) FirstIDX(ctx context.Context) int {
+func (sq *ServerQuery) FirstIDX(ctx context.Context) uint64 {
 	id, err := sq.FirstID(ctx)
 	if err != nil && !IsNotFound(err) {
 		panic(err)
@@ -136,8 +162,8 @@ func (sq *ServerQuery) OnlyX(ctx context.Context) *Server {
 // OnlyID is like Only, but returns the only Server ID in the query.
 // Returns a *NotSingularError when more than one Server ID is found.
 // Returns a *NotFoundError when no entities are found.
-func (sq *ServerQuery) OnlyID(ctx context.Context) (id int, err error) {
-	var ids []int
+func (sq *ServerQuery) OnlyID(ctx context.Context) (id uint64, err error) {
+	var ids []uint64
 	if ids, err = sq.Limit(2).IDs(ctx); err != nil {
 		return
 	}
@@ -153,7 +179,7 @@ func (sq *ServerQuery) OnlyID(ctx context.Context) (id int, err error) {
 }
 
 // OnlyIDX is like OnlyID, but panics if an error occurs.
-func (sq *ServerQuery) OnlyIDX(ctx context.Context) int {
+func (sq *ServerQuery) OnlyIDX(ctx context.Context) uint64 {
 	id, err := sq.OnlyID(ctx)
 	if err != nil {
 		panic(err)
@@ -179,8 +205,8 @@ func (sq *ServerQuery) AllX(ctx context.Context) []*Server {
 }
 
 // IDs executes the query and returns a list of Server IDs.
-func (sq *ServerQuery) IDs(ctx context.Context) ([]int, error) {
-	var ids []int
+func (sq *ServerQuery) IDs(ctx context.Context) ([]uint64, error) {
+	var ids []uint64
 	if err := sq.Select(server.FieldID).Scan(ctx, &ids); err != nil {
 		return nil, err
 	}
@@ -188,7 +214,7 @@ func (sq *ServerQuery) IDs(ctx context.Context) ([]int, error) {
 }
 
 // IDsX is like IDs, but panics if an error occurs.
-func (sq *ServerQuery) IDsX(ctx context.Context) []int {
+func (sq *ServerQuery) IDsX(ctx context.Context) []uint64 {
 	ids, err := sq.IDs(ctx)
 	if err != nil {
 		panic(err)
@@ -242,11 +268,23 @@ func (sq *ServerQuery) Clone() *ServerQuery {
 		offset:     sq.offset,
 		order:      append([]OrderFunc{}, sq.order...),
 		predicates: append([]predicate.Server{}, sq.predicates...),
+		withActors: sq.withActors.Clone(),
 		// clone intermediate query.
 		sql:    sq.sql.Clone(),
 		path:   sq.path,
 		unique: sq.unique,
 	}
+}
+
+// WithActors tells the query-builder to eager-load the nodes that are connected to
+// the "actors" edge. The optional arguments are used to configure the query builder of the edge.
+func (sq *ServerQuery) WithActors(opts ...func(*ActorQuery)) *ServerQuery {
+	query := &ActorQuery{config: sq.config}
+	for _, opt := range opts {
+		opt(query)
+	}
+	sq.withActors = query
+	return sq
 }
 
 // GroupBy is used to group vertices by one or more fields/columns.
@@ -310,13 +348,22 @@ func (sq *ServerQuery) prepareQuery(ctx context.Context) error {
 		}
 		sq.sql = prev
 	}
+	if server.Policy == nil {
+		return errors.New("ent: uninitialized server.Policy (forgotten import ent/runtime?)")
+	}
+	if err := server.Policy.EvalQuery(ctx, sq); err != nil {
+		return err
+	}
 	return nil
 }
 
 func (sq *ServerQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Server, error) {
 	var (
-		nodes = []*Server{}
-		_spec = sq.querySpec()
+		nodes       = []*Server{}
+		_spec       = sq.querySpec()
+		loadedTypes = [1]bool{
+			sq.withActors != nil,
+		}
 	)
 	_spec.ScanValues = func(columns []string) ([]interface{}, error) {
 		return (*Server).scanValues(nil, columns)
@@ -324,6 +371,7 @@ func (sq *ServerQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Serve
 	_spec.Assign = func(columns []string, values []interface{}) error {
 		node := &Server{config: sq.config}
 		nodes = append(nodes, node)
+		node.Edges.loadedTypes = loadedTypes
 		return node.assignValues(columns, values)
 	}
 	if len(sq.modifiers) > 0 {
@@ -338,7 +386,46 @@ func (sq *ServerQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Serve
 	if len(nodes) == 0 {
 		return nodes, nil
 	}
+	if query := sq.withActors; query != nil {
+		if err := sq.loadActors(ctx, query, nodes,
+			func(n *Server) { n.Edges.Actors = []*Actor{} },
+			func(n *Server, e *Actor) { n.Edges.Actors = append(n.Edges.Actors, e) }); err != nil {
+			return nil, err
+		}
+	}
 	return nodes, nil
+}
+
+func (sq *ServerQuery) loadActors(ctx context.Context, query *ActorQuery, nodes []*Server, init func(*Server), assign func(*Server, *Actor)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[uint64]*Server)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	query.withFKs = true
+	query.Where(predicate.Actor(func(s *sql.Selector) {
+		s.Where(sql.InValues(server.ActorsColumn, fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.server_actors
+		if fk == nil {
+			return fmt.Errorf(`foreign-key "server_actors" is nil for node %v`, n.ID)
+		}
+		node, ok := nodeids[*fk]
+		if !ok {
+			return fmt.Errorf(`unexpected foreign-key "server_actors" returned %v for node %v`, *fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
 }
 
 func (sq *ServerQuery) sqlCount(ctx context.Context) (int, error) {
@@ -367,7 +454,7 @@ func (sq *ServerQuery) querySpec() *sqlgraph.QuerySpec {
 			Table:   server.Table,
 			Columns: server.Columns,
 			ID: &sqlgraph.FieldSpec{
-				Type:   field.TypeInt,
+				Type:   field.TypeUint64,
 				Column: server.FieldID,
 			},
 		},

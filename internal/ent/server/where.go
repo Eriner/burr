@@ -6,32 +6,33 @@ import (
 	"time"
 
 	"entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/eriner/burr/internal/ent/predicate"
 )
 
 // ID filters vertices based on their ID field.
-func ID(id int) predicate.Server {
+func ID(id uint64) predicate.Server {
 	return predicate.Server(func(s *sql.Selector) {
 		s.Where(sql.EQ(s.C(FieldID), id))
 	})
 }
 
 // IDEQ applies the EQ predicate on the ID field.
-func IDEQ(id int) predicate.Server {
+func IDEQ(id uint64) predicate.Server {
 	return predicate.Server(func(s *sql.Selector) {
 		s.Where(sql.EQ(s.C(FieldID), id))
 	})
 }
 
 // IDNEQ applies the NEQ predicate on the ID field.
-func IDNEQ(id int) predicate.Server {
+func IDNEQ(id uint64) predicate.Server {
 	return predicate.Server(func(s *sql.Selector) {
 		s.Where(sql.NEQ(s.C(FieldID), id))
 	})
 }
 
 // IDIn applies the In predicate on the ID field.
-func IDIn(ids ...int) predicate.Server {
+func IDIn(ids ...uint64) predicate.Server {
 	return predicate.Server(func(s *sql.Selector) {
 		v := make([]interface{}, len(ids))
 		for i := range v {
@@ -42,7 +43,7 @@ func IDIn(ids ...int) predicate.Server {
 }
 
 // IDNotIn applies the NotIn predicate on the ID field.
-func IDNotIn(ids ...int) predicate.Server {
+func IDNotIn(ids ...uint64) predicate.Server {
 	return predicate.Server(func(s *sql.Selector) {
 		v := make([]interface{}, len(ids))
 		for i := range v {
@@ -53,28 +54,28 @@ func IDNotIn(ids ...int) predicate.Server {
 }
 
 // IDGT applies the GT predicate on the ID field.
-func IDGT(id int) predicate.Server {
+func IDGT(id uint64) predicate.Server {
 	return predicate.Server(func(s *sql.Selector) {
 		s.Where(sql.GT(s.C(FieldID), id))
 	})
 }
 
 // IDGTE applies the GTE predicate on the ID field.
-func IDGTE(id int) predicate.Server {
+func IDGTE(id uint64) predicate.Server {
 	return predicate.Server(func(s *sql.Selector) {
 		s.Where(sql.GTE(s.C(FieldID), id))
 	})
 }
 
 // IDLT applies the LT predicate on the ID field.
-func IDLT(id int) predicate.Server {
+func IDLT(id uint64) predicate.Server {
 	return predicate.Server(func(s *sql.Selector) {
 		s.Where(sql.LT(s.C(FieldID), id))
 	})
 }
 
 // IDLTE applies the LTE predicate on the ID field.
-func IDLTE(id int) predicate.Server {
+func IDLTE(id uint64) predicate.Server {
 	return predicate.Server(func(s *sql.Selector) {
 		s.Where(sql.LTE(s.C(FieldID), id))
 	})
@@ -105,6 +106,20 @@ func CreatedBy(v int) predicate.Server {
 func UpdatedBy(v int) predicate.Server {
 	return predicate.Server(func(s *sql.Selector) {
 		s.Where(sql.EQ(s.C(FieldUpdatedBy), v))
+	})
+}
+
+// Domain applies equality check predicate on the "domain" field. It's identical to DomainEQ.
+func Domain(v string) predicate.Server {
+	return predicate.Server(func(s *sql.Selector) {
+		s.Where(sql.EQ(s.C(FieldDomain), v))
+	})
+}
+
+// LastSeen applies equality check predicate on the "last_seen" field. It's identical to LastSeenEQ.
+func LastSeen(v time.Time) predicate.Server {
+	return predicate.Server(func(s *sql.Selector) {
+		s.Where(sql.EQ(s.C(FieldLastSeen), v))
 	})
 }
 
@@ -389,6 +404,197 @@ func UpdatedByIsNil() predicate.Server {
 func UpdatedByNotNil() predicate.Server {
 	return predicate.Server(func(s *sql.Selector) {
 		s.Where(sql.NotNull(s.C(FieldUpdatedBy)))
+	})
+}
+
+// DomainEQ applies the EQ predicate on the "domain" field.
+func DomainEQ(v string) predicate.Server {
+	return predicate.Server(func(s *sql.Selector) {
+		s.Where(sql.EQ(s.C(FieldDomain), v))
+	})
+}
+
+// DomainNEQ applies the NEQ predicate on the "domain" field.
+func DomainNEQ(v string) predicate.Server {
+	return predicate.Server(func(s *sql.Selector) {
+		s.Where(sql.NEQ(s.C(FieldDomain), v))
+	})
+}
+
+// DomainIn applies the In predicate on the "domain" field.
+func DomainIn(vs ...string) predicate.Server {
+	v := make([]interface{}, len(vs))
+	for i := range v {
+		v[i] = vs[i]
+	}
+	return predicate.Server(func(s *sql.Selector) {
+		s.Where(sql.In(s.C(FieldDomain), v...))
+	})
+}
+
+// DomainNotIn applies the NotIn predicate on the "domain" field.
+func DomainNotIn(vs ...string) predicate.Server {
+	v := make([]interface{}, len(vs))
+	for i := range v {
+		v[i] = vs[i]
+	}
+	return predicate.Server(func(s *sql.Selector) {
+		s.Where(sql.NotIn(s.C(FieldDomain), v...))
+	})
+}
+
+// DomainGT applies the GT predicate on the "domain" field.
+func DomainGT(v string) predicate.Server {
+	return predicate.Server(func(s *sql.Selector) {
+		s.Where(sql.GT(s.C(FieldDomain), v))
+	})
+}
+
+// DomainGTE applies the GTE predicate on the "domain" field.
+func DomainGTE(v string) predicate.Server {
+	return predicate.Server(func(s *sql.Selector) {
+		s.Where(sql.GTE(s.C(FieldDomain), v))
+	})
+}
+
+// DomainLT applies the LT predicate on the "domain" field.
+func DomainLT(v string) predicate.Server {
+	return predicate.Server(func(s *sql.Selector) {
+		s.Where(sql.LT(s.C(FieldDomain), v))
+	})
+}
+
+// DomainLTE applies the LTE predicate on the "domain" field.
+func DomainLTE(v string) predicate.Server {
+	return predicate.Server(func(s *sql.Selector) {
+		s.Where(sql.LTE(s.C(FieldDomain), v))
+	})
+}
+
+// DomainContains applies the Contains predicate on the "domain" field.
+func DomainContains(v string) predicate.Server {
+	return predicate.Server(func(s *sql.Selector) {
+		s.Where(sql.Contains(s.C(FieldDomain), v))
+	})
+}
+
+// DomainHasPrefix applies the HasPrefix predicate on the "domain" field.
+func DomainHasPrefix(v string) predicate.Server {
+	return predicate.Server(func(s *sql.Selector) {
+		s.Where(sql.HasPrefix(s.C(FieldDomain), v))
+	})
+}
+
+// DomainHasSuffix applies the HasSuffix predicate on the "domain" field.
+func DomainHasSuffix(v string) predicate.Server {
+	return predicate.Server(func(s *sql.Selector) {
+		s.Where(sql.HasSuffix(s.C(FieldDomain), v))
+	})
+}
+
+// DomainEqualFold applies the EqualFold predicate on the "domain" field.
+func DomainEqualFold(v string) predicate.Server {
+	return predicate.Server(func(s *sql.Selector) {
+		s.Where(sql.EqualFold(s.C(FieldDomain), v))
+	})
+}
+
+// DomainContainsFold applies the ContainsFold predicate on the "domain" field.
+func DomainContainsFold(v string) predicate.Server {
+	return predicate.Server(func(s *sql.Selector) {
+		s.Where(sql.ContainsFold(s.C(FieldDomain), v))
+	})
+}
+
+// LastSeenEQ applies the EQ predicate on the "last_seen" field.
+func LastSeenEQ(v time.Time) predicate.Server {
+	return predicate.Server(func(s *sql.Selector) {
+		s.Where(sql.EQ(s.C(FieldLastSeen), v))
+	})
+}
+
+// LastSeenNEQ applies the NEQ predicate on the "last_seen" field.
+func LastSeenNEQ(v time.Time) predicate.Server {
+	return predicate.Server(func(s *sql.Selector) {
+		s.Where(sql.NEQ(s.C(FieldLastSeen), v))
+	})
+}
+
+// LastSeenIn applies the In predicate on the "last_seen" field.
+func LastSeenIn(vs ...time.Time) predicate.Server {
+	v := make([]interface{}, len(vs))
+	for i := range v {
+		v[i] = vs[i]
+	}
+	return predicate.Server(func(s *sql.Selector) {
+		s.Where(sql.In(s.C(FieldLastSeen), v...))
+	})
+}
+
+// LastSeenNotIn applies the NotIn predicate on the "last_seen" field.
+func LastSeenNotIn(vs ...time.Time) predicate.Server {
+	v := make([]interface{}, len(vs))
+	for i := range v {
+		v[i] = vs[i]
+	}
+	return predicate.Server(func(s *sql.Selector) {
+		s.Where(sql.NotIn(s.C(FieldLastSeen), v...))
+	})
+}
+
+// LastSeenGT applies the GT predicate on the "last_seen" field.
+func LastSeenGT(v time.Time) predicate.Server {
+	return predicate.Server(func(s *sql.Selector) {
+		s.Where(sql.GT(s.C(FieldLastSeen), v))
+	})
+}
+
+// LastSeenGTE applies the GTE predicate on the "last_seen" field.
+func LastSeenGTE(v time.Time) predicate.Server {
+	return predicate.Server(func(s *sql.Selector) {
+		s.Where(sql.GTE(s.C(FieldLastSeen), v))
+	})
+}
+
+// LastSeenLT applies the LT predicate on the "last_seen" field.
+func LastSeenLT(v time.Time) predicate.Server {
+	return predicate.Server(func(s *sql.Selector) {
+		s.Where(sql.LT(s.C(FieldLastSeen), v))
+	})
+}
+
+// LastSeenLTE applies the LTE predicate on the "last_seen" field.
+func LastSeenLTE(v time.Time) predicate.Server {
+	return predicate.Server(func(s *sql.Selector) {
+		s.Where(sql.LTE(s.C(FieldLastSeen), v))
+	})
+}
+
+// HasActors applies the HasEdge predicate on the "actors" edge.
+func HasActors() predicate.Server {
+	return predicate.Server(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.To(ActorsTable, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, ActorsTable, ActorsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasActorsWith applies the HasEdge predicate on the "actors" edge with a given conditions (other predicates).
+func HasActorsWith(preds ...predicate.Actor) predicate.Server {
+	return predicate.Server(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.To(ActorsInverseTable, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, ActorsTable, ActorsColumn),
+		)
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
 	})
 }
 

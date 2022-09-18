@@ -189,12 +189,13 @@ type (
 	EnumType struct {
 		T      string   // Optional type.
 		Values []string // Enum values.
+		Schema *Schema  // Optional schema.
 	}
 
 	// BinaryType represents a type that stores a binary data.
 	BinaryType struct {
 		T    string
-		Size int
+		Size *int
 	}
 
 	// StringType represents a string type.

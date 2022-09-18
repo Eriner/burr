@@ -12,10 +12,20 @@ import (
 // Tx is a transactional client that is created by calling Client.Tx().
 type Tx struct {
 	config
+	// Actor is the client for interacting with the Actor builders.
+	Actor *ActorClient
+	// Event is the client for interacting with the Event builders.
+	Event *EventClient
+	// Group is the client for interacting with the Group builders.
+	Group *GroupClient
+	// Reaction is the client for interacting with the Reaction builders.
+	Reaction *ReactionClient
 	// Server is the client for interacting with the Server builders.
 	Server *ServerClient
-	// User is the client for interacting with the User builders.
-	User *UserClient
+	// Session is the client for interacting with the Session builders.
+	Session *SessionClient
+	// Status is the client for interacting with the Status builders.
+	Status *StatusClient
 
 	// lazily loaded.
 	client     *Client
@@ -151,8 +161,13 @@ func (tx *Tx) Client() *Client {
 }
 
 func (tx *Tx) init() {
+	tx.Actor = NewActorClient(tx.config)
+	tx.Event = NewEventClient(tx.config)
+	tx.Group = NewGroupClient(tx.config)
+	tx.Reaction = NewReactionClient(tx.config)
 	tx.Server = NewServerClient(tx.config)
-	tx.User = NewUserClient(tx.config)
+	tx.Session = NewSessionClient(tx.config)
+	tx.Status = NewStatusClient(tx.config)
 }
 
 // txDriver wraps the given dialect.Tx with a nop dialect.Driver implementation.
@@ -162,7 +177,7 @@ func (tx *Tx) init() {
 // of them in order to commit or rollback the transaction.
 //
 // If a closed transaction is embedded in one of the generated entities, and the entity
-// applies a query, for example: Server.QueryXXX(), the query will be executed
+// applies a query, for example: Actor.QueryXXX(), the query will be executed
 // through the driver which created this transaction.
 //
 // Note that txDriver is not goroutine safe.

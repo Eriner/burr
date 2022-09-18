@@ -27,6 +27,9 @@ func (i *inspect) InspectRealm(ctx context.Context, opts *schema.InspectRealmOpt
 	if err != nil {
 		return nil, err
 	}
+	if opts == nil {
+		opts = &schema.InspectRealmOption{}
+	}
 	r := schema.NewRealm(schemas...).SetCharset(i.charset).SetCollation(i.collate)
 	if len(schemas) == 0 || !sqlx.ModeInspectRealm(opts).Is(schema.InspectTables) {
 		return r, nil
@@ -35,7 +38,7 @@ func (i *inspect) InspectRealm(ctx context.Context, opts *schema.InspectRealmOpt
 		return nil, err
 	}
 	sqlx.LinkSchemaTables(schemas)
-	return r, nil
+	return sqlx.ExcludeRealm(r, opts.Exclude)
 }
 
 // InspectSchema returns schema descriptions of the tables in the given schema.
@@ -51,6 +54,9 @@ func (i *inspect) InspectSchema(ctx context.Context, name string, opts *schema.I
 	case n > 1:
 		return nil, fmt.Errorf("mysql: %d schemas were found for %q", n, name)
 	}
+	if opts == nil {
+		opts = &schema.InspectOptions{}
+	}
 	r := schema.NewRealm(schemas...).SetCharset(i.charset).SetCollation(i.collate)
 	if sqlx.ModeInspectSchema(opts).Is(schema.InspectTables) {
 		if err := i.inspectTables(ctx, r, opts); err != nil {
@@ -58,7 +64,7 @@ func (i *inspect) InspectSchema(ctx context.Context, name string, opts *schema.I
 		}
 		sqlx.LinkSchemaTables(schemas)
 	}
-	return r.Schemas[0], nil
+	return sqlx.ExcludeSchema(r.Schemas[0], opts.Exclude)
 }
 
 func (i *inspect) inspectTables(ctx context.Context, r *schema.Realm, opts *schema.InspectOptions) error {
@@ -91,7 +97,7 @@ func (i *inspect) inspectTables(ctx context.Context, r *schema.Realm, opts *sche
 // schemas returns the list of the schemas in the database.
 func (i *inspect) schemas(ctx context.Context, opts *schema.InspectRealmOption) ([]*schema.Schema, error) {
 	var (
-		args  []interface{}
+		args  []any
 		query = schemasQuery
 	)
 	if opts != nil {
@@ -136,7 +142,7 @@ func (i *inspect) schemas(ctx context.Context, opts *schema.InspectRealmOption) 
 
 func (i *inspect) tables(ctx context.Context, realm *schema.Realm, opts *schema.InspectOptions) error {
 	var (
-		args  []interface{}
+		args  []any
 		query = fmt.Sprintf(tablesQuery, nArgs(len(realm.Schemas)))
 	)
 	for _, s := range realm.Schemas {
@@ -547,7 +553,8 @@ func (i *inspect) setAutoInc(s *showTable, t *schema.Table) error {
 // createStmt loads the CREATE TABLE statement for the table.
 func (i *inspect) createStmt(ctx context.Context, t *schema.Table) error {
 	c := &CreateStmt{}
-	rows, err := i.QueryContext(ctx, Build("SHOW CREATE TABLE").Table(t).String())
+	b := &sqlx.Builder{QuoteChar: '`'}
+	rows, err := i.QueryContext(ctx, b.P("SHOW CREATE TABLE").Table(t).String())
 	if err != nil {
 		return fmt.Errorf("query CREATE TABLE %q: %w", t.Name, err)
 	}
@@ -589,7 +596,7 @@ func (i *inspect) myDefaultExpr(c *schema.Column, x string, attr *extraAttr) sch
 }
 
 // parseColumn returns column parts, size and signed-info from a MySQL type.
-func parseColumn(typ string) (parts []string, size int64, unsigned bool, err error) {
+func parseColumn(typ string) (parts []string, size int, unsigned bool, err error) {
 	switch parts = strings.FieldsFunc(typ, func(r rune) bool {
 		return r == '(' || r == ')' || r == ' ' || r == ','
 	}); parts[0] {
@@ -599,10 +606,12 @@ func parseColumn(typ string) (parts []string, size int64, unsigned bool, err err
 			unsigned = true
 		}
 		if len(parts) > 2 || len(parts) == 2 && !unsigned {
-			size, err = strconv.ParseInt(parts[1], 10, 64)
+			size, err = strconv.Atoi(parts[1])
 		}
-	case TypeBinary, TypeVarBinary, TypeChar, TypeVarchar:
-		size, err = strconv.ParseInt(parts[1], 10, 64)
+	case TypeBit, TypeBinary, TypeVarBinary, TypeChar, TypeVarchar:
+		if len(parts) > 1 {
+			size, err = strconv.Atoi(parts[1])
+		}
 	}
 	if err != nil {
 		return nil, 0, false, fmt.Errorf("parse %q to int: %w", parts[1], err)
@@ -656,7 +665,7 @@ func (i *inspect) marDefaultExpr(c *schema.Column, x string) schema.Expr {
 }
 
 func (i *inspect) querySchema(ctx context.Context, query string, s *schema.Schema) (*sql.Rows, error) {
-	args := []interface{}{s.Name}
+	args := []any{s.Name}
 	for _, t := range s.Tables {
 		args = append(args, t.Name)
 	}
@@ -828,7 +837,8 @@ type (
 	// BitType represents a bit type.
 	BitType struct {
 		schema.Type
-		T string
+		T    string
+		Size int
 	}
 
 	// SetType represents a set type.

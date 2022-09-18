@@ -59,7 +59,7 @@ func ValidString(s sql.NullString) bool {
 }
 
 // ScanOne scans one record and closes the rows at the end.
-func ScanOne(rows *sql.Rows, dest ...interface{}) error {
+func ScanOne(rows *sql.Rows, dest ...any) error {
 	defer rows.Close()
 	if !rows.Next() {
 		return sql.ErrNoRows
@@ -214,7 +214,8 @@ func ModeInspectRealm(o *schema.InspectRealmOption) schema.InspectMode {
 // A Builder provides a syntactic sugar API for writing SQL statements.
 type Builder struct {
 	bytes.Buffer
-	QuoteChar byte
+	QuoteChar byte    // quoting identifiers
+	Schema    *string // schema qualifier
 }
 
 // P writes a list of phrases to the builder separated and
@@ -249,7 +250,16 @@ func (b *Builder) Ident(s string) *Builder {
 // Table writes the table identifier to the builder, prefixed
 // with the schema name if exists.
 func (b *Builder) Table(t *schema.Table) *Builder {
-	if t.Schema != nil {
+	switch {
+	// Custom qualifier.
+	case b.Schema != nil:
+		// Empty means skip prefix.
+		if *b.Schema != "" {
+			b.Ident(*b.Schema)
+			b.rewriteLastByte('.')
+		}
+	// Default schema qualifier.
+	case t.Schema != nil && t.Schema.Name != "":
 		b.Ident(t.Schema.Name)
 		b.rewriteLastByte('.')
 	}
@@ -273,7 +283,7 @@ func (b *Builder) Comma() *Builder {
 
 // MapComma maps the slice x using the function f and joins the result with
 // a comma separating between the written elements.
-func (b *Builder) MapComma(x interface{}, f func(i int, b *Builder)) *Builder {
+func (b *Builder) MapComma(x any, f func(i int, b *Builder)) *Builder {
 	s := reflect.ValueOf(x)
 	for i := 0; i < s.Len(); i++ {
 		if i > 0 {
@@ -285,7 +295,7 @@ func (b *Builder) MapComma(x interface{}, f func(i int, b *Builder)) *Builder {
 }
 
 // MapCommaErr is like MapComma, but returns an error if f returns an error.
-func (b *Builder) MapCommaErr(x interface{}, f func(i int, b *Builder) error) error {
+func (b *Builder) MapCommaErr(x any, f func(i int, b *Builder) error) error {
 	s := reflect.ValueOf(x)
 	for i := 0; i < s.Len(); i++ {
 		if i > 0 {
@@ -339,7 +349,7 @@ func (b *Builder) rewriteLastByte(c byte) {
 	buf[len(buf)-1] = c
 }
 
-// IsQuoted reports if the given string is quoted with one of the given quotes (e.g. '\'', '"', '`').
+// IsQuoted reports if the given string is quoted with one of the given quotes (e.g. ', ", `).
 func IsQuoted(s string, q ...byte) bool {
 	for i := range q {
 		if l, r := strings.IndexByte(s, q[i]), strings.LastIndexByte(s, q[i]); l < r && l == 0 && r == len(s)-1 {
@@ -436,4 +446,18 @@ func ReverseChanges(c []schema.Change) {
 	for i, n := 0, len(c); i < n/2; i++ {
 		c[i], c[n-i-1] = c[n-i-1], c[i]
 	}
+}
+
+// P returns a pointer to v.
+func P[T any](v T) *T {
+	return &v
+}
+
+// V returns the value p is pointing to.
+// If p is nil, the zero value is returned.
+func V[T any](p *T) (v T) {
+	if p != nil {
+		v = *p
+	}
+	return
 }

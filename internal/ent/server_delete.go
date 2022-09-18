@@ -72,7 +72,7 @@ func (sd *ServerDelete) sqlExec(ctx context.Context) (int, error) {
 		Node: &sqlgraph.NodeSpec{
 			Table: server.Table,
 			ID: &sqlgraph.FieldSpec{
-				Type:   field.TypeInt,
+				Type:   field.TypeUint64,
 				Column: server.FieldID,
 			},
 		},

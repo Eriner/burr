@@ -8,43 +8,384 @@ import (
 )
 
 var (
-	// ServersColumns holds the columns for the "servers" table.
-	ServersColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeInt, Increment: true},
+	// ActorsColumns holds the columns for the "actors" table.
+	ActorsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUint64, Increment: true},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "created_by", Type: field.TypeInt, Nullable: true},
 		{Name: "updated_by", Type: field.TypeInt, Nullable: true},
+		{Name: "type", Type: field.TypeEnum, Enums: []string{"local_user", "local_bot", "local_group", "local_event", "remote_user", "remote_bot", "remote_group", "remote_event"}},
+		{Name: "name", Type: field.TypeString, Size: 64},
+		{Name: "display_name", Type: field.TypeString, Size: 64, Default: "unknown"},
+		{Name: "note", Type: field.TypeString, Size: 2048, Default: ""},
+		{Name: "locked", Type: field.TypeBool, Default: false},
+		{Name: "memorial", Type: field.TypeBool, Default: false},
+		{Name: "url", Type: field.TypeString, Size: 255},
+		{Name: "pubkey", Type: field.TypeBytes},
+		{Name: "privkey", Type: field.TypeBytes, Nullable: true},
+		{Name: "avatar_remote_url", Type: field.TypeString, Nullable: true, Size: 255},
+		{Name: "avatar_local_file", Type: field.TypeString, Nullable: true, Size: 255},
+		{Name: "avatar_updated_at", Type: field.TypeTime, Nullable: true},
+		{Name: "header_url", Type: field.TypeString, Nullable: true, Size: 255},
+		{Name: "header_local_file", Type: field.TypeString, Nullable: true, Size: 255},
+		{Name: "header_updated_at", Type: field.TypeTime, Nullable: true},
+		{Name: "last_webfinger_at", Type: field.TypeTime, Nullable: true},
+		{Name: "inbox_url", Type: field.TypeString, Size: 255},
+		{Name: "outbox_url", Type: field.TypeString, Size: 255},
+		{Name: "shared_inbox_url", Type: field.TypeString, Size: 255},
+		{Name: "followers_url", Type: field.TypeString, Size: 255},
+		{Name: "moved_to_id", Type: field.TypeUint64, Nullable: true},
+		{Name: "featured_collection_url", Type: field.TypeString, Nullable: true},
+		{Name: "silenced_at", Type: field.TypeTime, Nullable: true},
+		{Name: "suspended_at", Type: field.TypeTime, Nullable: true},
+		{Name: "password_hash", Type: field.TypeBytes, Nullable: true, Size: 60},
+		{Name: "recovery_code", Type: field.TypeString, Nullable: true},
+		{Name: "role", Type: field.TypeUint64, Nullable: true, Default: 0},
+		{Name: "badge", Type: field.TypeUint64, Nullable: true, Default: 0},
+		{Name: "locale", Type: field.TypeEnum, Enums: []string{"en-US"}},
+		{Name: "server_actors", Type: field.TypeUint64},
+	}
+	// ActorsTable holds the schema information for the "actors" table.
+	ActorsTable = &schema.Table{
+		Name:       "actors",
+		Columns:    ActorsColumns,
+		PrimaryKey: []*schema.Column{ActorsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "actors_servers_actors",
+				Columns:    []*schema.Column{ActorsColumns[34]},
+				RefColumns: []*schema.Column{ServersColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "actor_id",
+				Unique:  true,
+				Columns: []*schema.Column{ActorsColumns[0]},
+			},
+		},
+	}
+	// EventsColumns holds the columns for the "events" table.
+	EventsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUint64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "created_by", Type: field.TypeInt, Nullable: true},
+		{Name: "updated_by", Type: field.TypeInt, Nullable: true},
+		{Name: "display_name", Type: field.TypeString, Size: 64},
+		{Name: "actor_organizer_of", Type: field.TypeUint64},
+	}
+	// EventsTable holds the schema information for the "events" table.
+	EventsTable = &schema.Table{
+		Name:       "events",
+		Columns:    EventsColumns,
+		PrimaryKey: []*schema.Column{EventsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "events_actors_organizer_of",
+				Columns:    []*schema.Column{EventsColumns[6]},
+				RefColumns: []*schema.Column{ActorsColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "event_id",
+				Unique:  true,
+				Columns: []*schema.Column{EventsColumns[0]},
+			},
+		},
+	}
+	// GroupsColumns holds the columns for the "groups" table.
+	GroupsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUint64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "created_by", Type: field.TypeInt, Nullable: true},
+		{Name: "updated_by", Type: field.TypeInt, Nullable: true},
+		{Name: "group_actors", Type: field.TypeUint64},
+		{Name: "group_owners", Type: field.TypeUint64},
+	}
+	// GroupsTable holds the schema information for the "groups" table.
+	GroupsTable = &schema.Table{
+		Name:       "groups",
+		Columns:    GroupsColumns,
+		PrimaryKey: []*schema.Column{GroupsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "groups_actors_actors",
+				Columns:    []*schema.Column{GroupsColumns[5]},
+				RefColumns: []*schema.Column{ActorsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+			{
+				Symbol:     "groups_actors_owners",
+				Columns:    []*schema.Column{GroupsColumns[6]},
+				RefColumns: []*schema.Column{ActorsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+	}
+	// ReactionsColumns holds the columns for the "reactions" table.
+	ReactionsColumns = []*schema.Column{
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "created_by", Type: field.TypeInt, Nullable: true},
+		{Name: "updated_by", Type: field.TypeInt, Nullable: true},
+		{Name: "type", Type: field.TypeEnum, Enums: []string{"like", "boost", "emote"}},
+		{Name: "dat", Type: field.TypeUint64},
+		{Name: "actor_id", Type: field.TypeUint64},
+		{Name: "status_id", Type: field.TypeUint64},
+	}
+	// ReactionsTable holds the schema information for the "reactions" table.
+	ReactionsTable = &schema.Table{
+		Name:       "reactions",
+		Columns:    ReactionsColumns,
+		PrimaryKey: []*schema.Column{ReactionsColumns[6], ReactionsColumns[7]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "reactions_actors_actors",
+				Columns:    []*schema.Column{ReactionsColumns[6]},
+				RefColumns: []*schema.Column{ActorsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+			{
+				Symbol:     "reactions_status_status",
+				Columns:    []*schema.Column{ReactionsColumns[7]},
+				RefColumns: []*schema.Column{StatusColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+	}
+	// ServersColumns holds the columns for the "servers" table.
+	ServersColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUint64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "created_by", Type: field.TypeInt, Nullable: true},
+		{Name: "updated_by", Type: field.TypeInt, Nullable: true},
+		{Name: "domain", Type: field.TypeString, Unique: true, Size: 255},
+		{Name: "last_seen", Type: field.TypeTime},
 	}
 	// ServersTable holds the schema information for the "servers" table.
 	ServersTable = &schema.Table{
 		Name:       "servers",
 		Columns:    ServersColumns,
 		PrimaryKey: []*schema.Column{ServersColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "server_id_domain",
+				Unique:  true,
+				Columns: []*schema.Column{ServersColumns[0], ServersColumns[5]},
+			},
+		},
 	}
-	// UsersColumns holds the columns for the "users" table.
-	UsersColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeInt, Increment: true},
+	// SessionsColumns holds the columns for the "sessions" table.
+	SessionsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUint64, Increment: true},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "created_by", Type: field.TypeInt, Nullable: true},
 		{Name: "updated_by", Type: field.TypeInt, Nullable: true},
-		{Name: "name", Type: field.TypeString, Size: 64, Default: "unknown"},
-		{Name: "email", Type: field.TypeString, Unique: true, Size: 64},
-		{Name: "password_hash", Type: field.TypeBytes, Size: 60},
+		{Name: "type", Type: field.TypeEnum, Enums: []string{"local", "oauth", "app_password"}},
+		{Name: "disabled", Type: field.TypeBool},
+		{Name: "token", Type: field.TypeString, Unique: true},
+		{Name: "user_agent", Type: field.TypeString, Nullable: true},
+		{Name: "ips", Type: field.TypeString},
+		{Name: "actor_sessions", Type: field.TypeUint64, Nullable: true},
+		{Name: "session_accounts", Type: field.TypeUint64, Nullable: true},
 	}
-	// UsersTable holds the schema information for the "users" table.
-	UsersTable = &schema.Table{
-		Name:       "users",
-		Columns:    UsersColumns,
-		PrimaryKey: []*schema.Column{UsersColumns[0]},
+	// SessionsTable holds the schema information for the "sessions" table.
+	SessionsTable = &schema.Table{
+		Name:       "sessions",
+		Columns:    SessionsColumns,
+		PrimaryKey: []*schema.Column{SessionsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "sessions_actors_sessions",
+				Columns:    []*schema.Column{SessionsColumns[10]},
+				RefColumns: []*schema.Column{ActorsColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+			{
+				Symbol:     "sessions_actors_accounts",
+				Columns:    []*schema.Column{SessionsColumns[11]},
+				RefColumns: []*schema.Column{ActorsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "session_id",
+				Unique:  true,
+				Columns: []*schema.Column{SessionsColumns[0]},
+			},
+		},
+	}
+	// StatusColumns holds the columns for the "status" table.
+	StatusColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUint64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "created_by", Type: field.TypeInt, Nullable: true},
+		{Name: "updated_by", Type: field.TypeInt, Nullable: true},
+		{Name: "actor_statuses", Type: field.TypeUint64},
+	}
+	// StatusTable holds the schema information for the "status" table.
+	StatusTable = &schema.Table{
+		Name:       "status",
+		Columns:    StatusColumns,
+		PrimaryKey: []*schema.Column{StatusColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "status_actors_statuses",
+				Columns:    []*schema.Column{StatusColumns[5]},
+				RefColumns: []*schema.Column{ActorsColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "status_id",
+				Unique:  true,
+				Columns: []*schema.Column{StatusColumns[0]},
+			},
+		},
+	}
+	// ActorFollowingColumns holds the columns for the "actor_following" table.
+	ActorFollowingColumns = []*schema.Column{
+		{Name: "actor_id", Type: field.TypeUint64},
+		{Name: "follower_id", Type: field.TypeUint64},
+	}
+	// ActorFollowingTable holds the schema information for the "actor_following" table.
+	ActorFollowingTable = &schema.Table{
+		Name:       "actor_following",
+		Columns:    ActorFollowingColumns,
+		PrimaryKey: []*schema.Column{ActorFollowingColumns[0], ActorFollowingColumns[1]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "actor_following_actor_id",
+				Columns:    []*schema.Column{ActorFollowingColumns[0]},
+				RefColumns: []*schema.Column{ActorsColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+			{
+				Symbol:     "actor_following_follower_id",
+				Columns:    []*schema.Column{ActorFollowingColumns[1]},
+				RefColumns: []*schema.Column{ActorsColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+		},
+	}
+	// ActorModeratingColumns holds the columns for the "actor_moderating" table.
+	ActorModeratingColumns = []*schema.Column{
+		{Name: "actor_id", Type: field.TypeUint64},
+		{Name: "moderator_id", Type: field.TypeUint64},
+	}
+	// ActorModeratingTable holds the schema information for the "actor_moderating" table.
+	ActorModeratingTable = &schema.Table{
+		Name:       "actor_moderating",
+		Columns:    ActorModeratingColumns,
+		PrimaryKey: []*schema.Column{ActorModeratingColumns[0], ActorModeratingColumns[1]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "actor_moderating_actor_id",
+				Columns:    []*schema.Column{ActorModeratingColumns[0]},
+				RefColumns: []*schema.Column{ActorsColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+			{
+				Symbol:     "actor_moderating_moderator_id",
+				Columns:    []*schema.Column{ActorModeratingColumns[1]},
+				RefColumns: []*schema.Column{ActorsColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+		},
+	}
+	// ActorGroupsColumns holds the columns for the "actor_groups" table.
+	ActorGroupsColumns = []*schema.Column{
+		{Name: "actor_id", Type: field.TypeUint64},
+		{Name: "member_id", Type: field.TypeUint64},
+	}
+	// ActorGroupsTable holds the schema information for the "actor_groups" table.
+	ActorGroupsTable = &schema.Table{
+		Name:       "actor_groups",
+		Columns:    ActorGroupsColumns,
+		PrimaryKey: []*schema.Column{ActorGroupsColumns[0], ActorGroupsColumns[1]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "actor_groups_actor_id",
+				Columns:    []*schema.Column{ActorGroupsColumns[0]},
+				RefColumns: []*schema.Column{ActorsColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+			{
+				Symbol:     "actor_groups_member_id",
+				Columns:    []*schema.Column{ActorGroupsColumns[1]},
+				RefColumns: []*schema.Column{ActorsColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+		},
+	}
+	// EventAttendeesColumns holds the columns for the "event_attendees" table.
+	EventAttendeesColumns = []*schema.Column{
+		{Name: "event_id", Type: field.TypeUint64},
+		{Name: "actor_id", Type: field.TypeUint64},
+	}
+	// EventAttendeesTable holds the schema information for the "event_attendees" table.
+	EventAttendeesTable = &schema.Table{
+		Name:       "event_attendees",
+		Columns:    EventAttendeesColumns,
+		PrimaryKey: []*schema.Column{EventAttendeesColumns[0], EventAttendeesColumns[1]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "event_attendees_event_id",
+				Columns:    []*schema.Column{EventAttendeesColumns[0]},
+				RefColumns: []*schema.Column{EventsColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+			{
+				Symbol:     "event_attendees_actor_id",
+				Columns:    []*schema.Column{EventAttendeesColumns[1]},
+				RefColumns: []*schema.Column{ActorsColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+		},
 	}
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
+		ActorsTable,
+		EventsTable,
+		GroupsTable,
+		ReactionsTable,
 		ServersTable,
-		UsersTable,
+		SessionsTable,
+		StatusTable,
+		ActorFollowingTable,
+		ActorModeratingTable,
+		ActorGroupsTable,
+		EventAttendeesTable,
 	}
 )
 
 func init() {
+	ActorsTable.ForeignKeys[0].RefTable = ServersTable
+	EventsTable.ForeignKeys[0].RefTable = ActorsTable
+	GroupsTable.ForeignKeys[0].RefTable = ActorsTable
+	GroupsTable.ForeignKeys[1].RefTable = ActorsTable
+	ReactionsTable.ForeignKeys[0].RefTable = ActorsTable
+	ReactionsTable.ForeignKeys[1].RefTable = StatusTable
+	SessionsTable.ForeignKeys[0].RefTable = ActorsTable
+	SessionsTable.ForeignKeys[1].RefTable = ActorsTable
+	StatusTable.ForeignKeys[0].RefTable = ActorsTable
+	ActorFollowingTable.ForeignKeys[0].RefTable = ActorsTable
+	ActorFollowingTable.ForeignKeys[1].RefTable = ActorsTable
+	ActorModeratingTable.ForeignKeys[0].RefTable = ActorsTable
+	ActorModeratingTable.ForeignKeys[1].RefTable = ActorsTable
+	ActorGroupsTable.ForeignKeys[0].RefTable = ActorsTable
+	ActorGroupsTable.ForeignKeys[1].RefTable = ActorsTable
+	EventAttendeesTable.ForeignKeys[0].RefTable = EventsTable
+	EventAttendeesTable.ForeignKeys[1].RefTable = ActorsTable
 }

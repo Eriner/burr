@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/eriner/burr/internal/ent/actor"
 	"github.com/eriner/burr/internal/ent/predicate"
 	"github.com/eriner/burr/internal/ent/server"
 )
@@ -88,9 +89,59 @@ func (su *ServerUpdate) ClearUpdatedBy() *ServerUpdate {
 	return su
 }
 
+// SetLastSeen sets the "last_seen" field.
+func (su *ServerUpdate) SetLastSeen(t time.Time) *ServerUpdate {
+	su.mutation.SetLastSeen(t)
+	return su
+}
+
+// SetNillableLastSeen sets the "last_seen" field if the given value is not nil.
+func (su *ServerUpdate) SetNillableLastSeen(t *time.Time) *ServerUpdate {
+	if t != nil {
+		su.SetLastSeen(*t)
+	}
+	return su
+}
+
+// AddActorIDs adds the "actors" edge to the Actor entity by IDs.
+func (su *ServerUpdate) AddActorIDs(ids ...uint64) *ServerUpdate {
+	su.mutation.AddActorIDs(ids...)
+	return su
+}
+
+// AddActors adds the "actors" edges to the Actor entity.
+func (su *ServerUpdate) AddActors(a ...*Actor) *ServerUpdate {
+	ids := make([]uint64, len(a))
+	for i := range a {
+		ids[i] = a[i].ID
+	}
+	return su.AddActorIDs(ids...)
+}
+
 // Mutation returns the ServerMutation object of the builder.
 func (su *ServerUpdate) Mutation() *ServerMutation {
 	return su.mutation
+}
+
+// ClearActors clears all "actors" edges to the Actor entity.
+func (su *ServerUpdate) ClearActors() *ServerUpdate {
+	su.mutation.ClearActors()
+	return su
+}
+
+// RemoveActorIDs removes the "actors" edge to Actor entities by IDs.
+func (su *ServerUpdate) RemoveActorIDs(ids ...uint64) *ServerUpdate {
+	su.mutation.RemoveActorIDs(ids...)
+	return su
+}
+
+// RemoveActors removes "actors" edges to Actor entities.
+func (su *ServerUpdate) RemoveActors(a ...*Actor) *ServerUpdate {
+	ids := make([]uint64, len(a))
+	for i := range a {
+		ids[i] = a[i].ID
+	}
+	return su.RemoveActorIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -168,7 +219,7 @@ func (su *ServerUpdate) sqlSave(ctx context.Context) (n int, err error) {
 			Table:   server.Table,
 			Columns: server.Columns,
 			ID: &sqlgraph.FieldSpec{
-				Type:   field.TypeInt,
+				Type:   field.TypeUint64,
 				Column: server.FieldID,
 			},
 		},
@@ -226,6 +277,67 @@ func (su *ServerUpdate) sqlSave(ctx context.Context) (n int, err error) {
 			Type:   field.TypeInt,
 			Column: server.FieldUpdatedBy,
 		})
+	}
+	if value, ok := su.mutation.LastSeen(); ok {
+		_spec.Fields.Set = append(_spec.Fields.Set, &sqlgraph.FieldSpec{
+			Type:   field.TypeTime,
+			Value:  value,
+			Column: server.FieldLastSeen,
+		})
+	}
+	if su.mutation.ActorsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   server.ActorsTable,
+			Columns: []string{server.ActorsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: &sqlgraph.FieldSpec{
+					Type:   field.TypeUint64,
+					Column: actor.FieldID,
+				},
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := su.mutation.RemovedActorsIDs(); len(nodes) > 0 && !su.mutation.ActorsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   server.ActorsTable,
+			Columns: []string{server.ActorsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: &sqlgraph.FieldSpec{
+					Type:   field.TypeUint64,
+					Column: actor.FieldID,
+				},
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := su.mutation.ActorsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   server.ActorsTable,
+			Columns: []string{server.ActorsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: &sqlgraph.FieldSpec{
+					Type:   field.TypeUint64,
+					Column: actor.FieldID,
+				},
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
 	if n, err = sqlgraph.UpdateNodes(ctx, su.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -306,9 +418,59 @@ func (suo *ServerUpdateOne) ClearUpdatedBy() *ServerUpdateOne {
 	return suo
 }
 
+// SetLastSeen sets the "last_seen" field.
+func (suo *ServerUpdateOne) SetLastSeen(t time.Time) *ServerUpdateOne {
+	suo.mutation.SetLastSeen(t)
+	return suo
+}
+
+// SetNillableLastSeen sets the "last_seen" field if the given value is not nil.
+func (suo *ServerUpdateOne) SetNillableLastSeen(t *time.Time) *ServerUpdateOne {
+	if t != nil {
+		suo.SetLastSeen(*t)
+	}
+	return suo
+}
+
+// AddActorIDs adds the "actors" edge to the Actor entity by IDs.
+func (suo *ServerUpdateOne) AddActorIDs(ids ...uint64) *ServerUpdateOne {
+	suo.mutation.AddActorIDs(ids...)
+	return suo
+}
+
+// AddActors adds the "actors" edges to the Actor entity.
+func (suo *ServerUpdateOne) AddActors(a ...*Actor) *ServerUpdateOne {
+	ids := make([]uint64, len(a))
+	for i := range a {
+		ids[i] = a[i].ID
+	}
+	return suo.AddActorIDs(ids...)
+}
+
 // Mutation returns the ServerMutation object of the builder.
 func (suo *ServerUpdateOne) Mutation() *ServerMutation {
 	return suo.mutation
+}
+
+// ClearActors clears all "actors" edges to the Actor entity.
+func (suo *ServerUpdateOne) ClearActors() *ServerUpdateOne {
+	suo.mutation.ClearActors()
+	return suo
+}
+
+// RemoveActorIDs removes the "actors" edge to Actor entities by IDs.
+func (suo *ServerUpdateOne) RemoveActorIDs(ids ...uint64) *ServerUpdateOne {
+	suo.mutation.RemoveActorIDs(ids...)
+	return suo
+}
+
+// RemoveActors removes "actors" edges to Actor entities.
+func (suo *ServerUpdateOne) RemoveActors(a ...*Actor) *ServerUpdateOne {
+	ids := make([]uint64, len(a))
+	for i := range a {
+		ids[i] = a[i].ID
+	}
+	return suo.RemoveActorIDs(ids...)
 }
 
 // Select allows selecting one or more fields (columns) of the returned entity.
@@ -399,7 +561,7 @@ func (suo *ServerUpdateOne) sqlSave(ctx context.Context) (_node *Server, err err
 			Table:   server.Table,
 			Columns: server.Columns,
 			ID: &sqlgraph.FieldSpec{
-				Type:   field.TypeInt,
+				Type:   field.TypeUint64,
 				Column: server.FieldID,
 			},
 		},
@@ -474,6 +636,67 @@ func (suo *ServerUpdateOne) sqlSave(ctx context.Context) (_node *Server, err err
 			Type:   field.TypeInt,
 			Column: server.FieldUpdatedBy,
 		})
+	}
+	if value, ok := suo.mutation.LastSeen(); ok {
+		_spec.Fields.Set = append(_spec.Fields.Set, &sqlgraph.FieldSpec{
+			Type:   field.TypeTime,
+			Value:  value,
+			Column: server.FieldLastSeen,
+		})
+	}
+	if suo.mutation.ActorsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   server.ActorsTable,
+			Columns: []string{server.ActorsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: &sqlgraph.FieldSpec{
+					Type:   field.TypeUint64,
+					Column: actor.FieldID,
+				},
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := suo.mutation.RemovedActorsIDs(); len(nodes) > 0 && !suo.mutation.ActorsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   server.ActorsTable,
+			Columns: []string{server.ActorsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: &sqlgraph.FieldSpec{
+					Type:   field.TypeUint64,
+					Column: actor.FieldID,
+				},
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := suo.mutation.ActorsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   server.ActorsTable,
+			Columns: []string{server.ActorsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: &sqlgraph.FieldSpec{
+					Type:   field.TypeUint64,
+					Column: actor.FieldID,
+				},
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
 	_node = &Server{config: suo.config}
 	_spec.Assign = _node.assignValues

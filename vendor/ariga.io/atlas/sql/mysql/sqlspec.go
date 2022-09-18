@@ -24,7 +24,7 @@ type doc struct {
 }
 
 // evalSpec evaluates an Atlas DDL document into v using the input.
-func evalSpec(p *hclparse.Parser, v interface{}, input map[string]string) error {
+func evalSpec(p *hclparse.Parser, v any, input map[string]string) error {
 	var d doc
 	if err := hclState.Eval(p, &d, input); err != nil {
 		return err
@@ -64,7 +64,7 @@ func evalSpec(p *hclparse.Parser, v interface{}, input map[string]string) error 
 }
 
 // MarshalSpec marshals v into an Atlas DDL document using a schemahcl.Marshaler.
-func MarshalSpec(v interface{}, marshaler schemahcl.Marshaler) ([]byte, error) {
+func MarshalSpec(v any, marshaler schemahcl.Marshaler) ([]byte, error) {
 	return specutil.Marshal(v, marshaler, schemaSpec)
 }
 
@@ -77,7 +77,7 @@ var (
 		schemahcl.WithScopedEnums("table.foreign_key.on_delete", specutil.ReferenceVars...),
 	)
 	// MarshalHCL marshals v into an Atlas HCL DDL document.
-	MarshalHCL = schemahcl.MarshalerFunc(func(v interface{}) ([]byte, error) {
+	MarshalHCL = schemahcl.MarshalerFunc(func(v any) ([]byte, error) {
 		return MarshalSpec(v, hclState)
 	})
 	// EvalHCL implements the schemahcl.Evaluator interface.
@@ -393,13 +393,13 @@ var TypeRegistry = schemahcl.NewRegistry(
 		schemahcl.NewTypeSpec(TypeDouble, schemahcl.WithAttributes(unsignedTypeAttr(), &schemahcl.TypeAttr{Name: "precision", Kind: reflect.Int, Required: false}, &schemahcl.TypeAttr{Name: "scale", Kind: reflect.Int, Required: false})),
 		schemahcl.NewTypeSpec(TypeReal, schemahcl.WithAttributes(unsignedTypeAttr(), &schemahcl.TypeAttr{Name: "precision", Kind: reflect.Int, Required: false}, &schemahcl.TypeAttr{Name: "scale", Kind: reflect.Int, Required: false})),
 		schemahcl.NewTypeSpec(TypeTimestamp, schemahcl.WithAttributes(&schemahcl.TypeAttr{Name: "precision", Kind: reflect.Int, Required: false})),
-		schemahcl.NewTypeSpec(TypeDate, schemahcl.WithAttributes(&schemahcl.TypeAttr{Name: "precision", Kind: reflect.Int, Required: false})),
+		schemahcl.NewTypeSpec(TypeDate),
 		schemahcl.NewTypeSpec(TypeTime, schemahcl.WithAttributes(&schemahcl.TypeAttr{Name: "precision", Kind: reflect.Int, Required: false})),
 		schemahcl.NewTypeSpec(TypeDateTime, schemahcl.WithAttributes(&schemahcl.TypeAttr{Name: "precision", Kind: reflect.Int, Required: false})),
 		schemahcl.NewTypeSpec(TypeYear, schemahcl.WithAttributes(&schemahcl.TypeAttr{Name: "precision", Kind: reflect.Int, Required: false})),
 		schemahcl.NewTypeSpec(TypeVarchar, schemahcl.WithAttributes(schemahcl.SizeTypeAttr(true))),
 		schemahcl.NewTypeSpec(TypeChar, schemahcl.WithAttributes(schemahcl.SizeTypeAttr(false))),
-		schemahcl.NewTypeSpec(TypeVarBinary, schemahcl.WithAttributes(schemahcl.SizeTypeAttr(false))),
+		schemahcl.NewTypeSpec(TypeVarBinary, schemahcl.WithAttributes(schemahcl.SizeTypeAttr(true))),
 		schemahcl.NewTypeSpec(TypeBinary, schemahcl.WithAttributes(schemahcl.SizeTypeAttr(false))),
 		schemahcl.NewTypeSpec(TypeBlob, schemahcl.WithAttributes(schemahcl.SizeTypeAttr(false))),
 		schemahcl.NewTypeSpec(TypeTinyBlob),

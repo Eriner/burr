@@ -79,6 +79,15 @@ func NewRealm(schemas ...*Schema) *Realm {
 	return r
 }
 
+// AddSchemas adds and links the given schemas to the realm.
+func (r *Realm) AddSchemas(schemas ...*Schema) *Realm {
+	for _, s := range schemas {
+		s.SetRealm(r)
+	}
+	r.Schemas = append(r.Schemas, schemas...)
+	return r
+}
+
 // SetCharset sets or appends the Charset attribute
 // to the realm with the given value.
 func (r *Realm) SetCharset(v string) *Realm {
@@ -268,6 +277,13 @@ func EnumValues(values ...string) EnumOption {
 	}
 }
 
+// EnumSchema configures the schema of the enum.
+func EnumSchema(s *Schema) EnumOption {
+	return func(e *EnumType) {
+		e.Schema = s
+	}
+}
+
 // NewEnumColumn creates a new EnumType column.
 func NewEnumColumn(name string, opts ...EnumOption) *Column {
 	t := &EnumType{}
@@ -289,7 +305,7 @@ type BinaryOption func(*BinaryType)
 // BinarySize configures the size of the binary type.
 func BinarySize(size int) BinaryOption {
 	return func(b *BinaryType) {
-		b.Size = size
+		b.Size = &size
 	}
 }
 

@@ -10,8 +10,13 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
+	"github.com/eriner/burr/internal/ent/actor"
+	"github.com/eriner/burr/internal/ent/event"
+	"github.com/eriner/burr/internal/ent/group"
+	"github.com/eriner/burr/internal/ent/reaction"
 	"github.com/eriner/burr/internal/ent/server"
-	"github.com/eriner/burr/internal/ent/user"
+	"github.com/eriner/burr/internal/ent/session"
+	"github.com/eriner/burr/internal/ent/status"
 )
 
 // ent aliases to avoid import conflicts in user's code.
@@ -32,8 +37,13 @@ type OrderFunc func(*sql.Selector)
 // columnChecker returns a function indicates if the column exists in the given column.
 func columnChecker(table string) func(string) error {
 	checks := map[string]func(string) bool{
-		server.Table: server.ValidColumn,
-		user.Table:   user.ValidColumn,
+		actor.Table:    actor.ValidColumn,
+		event.Table:    event.ValidColumn,
+		group.Table:    group.ValidColumn,
+		reaction.Table: reaction.ValidColumn,
+		server.Table:   server.ValidColumn,
+		session.Table:  session.ValidColumn,
+		status.Table:   status.ValidColumn,
 	}
 	check, ok := checks[table]
 	if !ok {

@@ -25,10 +25,10 @@ type varDef struct {
 // setInputVals sets the input values into the evaluation context. HCL documents can define
 // input variables in the document body by defining "variable" blocks:
 //
-// 	variable "name" {
-// 	  type = string // also supported: int, bool
-// 	  default = "rotemtam"
-// 	}
+//	variable "name" {
+//	  type = string // also supported: int, bool
+//	  default = "rotemtam"
+//	}
 func (s *State) setInputVals(ctx *hcl.EvalContext, body hcl.Body, input map[string]string) error {
 	var c struct {
 		Vars   []*varDef `hcl:"variable,block"`
@@ -125,9 +125,11 @@ func blockVars(blocks hclsyntax.Blocks, parentAddr string, defs *blockDef) (map[
 	vars := make(map[string]cty.Value)
 	for name, def := range defs.children {
 		v := make(map[string]cty.Value)
+		qv := make(map[string]map[string]cty.Value)
 		blocks := blocksOfType(blocks, name)
 		if len(blocks) == 0 {
-			v[name] = cty.NullVal(def.asCty())
+			vars[name] = cty.NullVal(def.asCty())
+			continue
 		}
 		var unlabeled int
 		for _, blk := range blocks {
@@ -153,16 +155,18 @@ func blockVars(blocks hclsyntax.Blocks, parentAddr string, defs *blockDef) (map[
 			for k, v := range varMap {
 				attrs[k] = v
 			}
-			key, obj := blkName, cty.ObjectVal(attrs)
-			if qualifier != "" {
-				obj = cty.ObjectVal(
-					map[string]cty.Value{
-						blkName: obj,
-					},
-				)
-				key = qualifier
+			switch {
+			case qualifier != "":
+				obj := cty.ObjectVal(attrs)
+				if _, ok := qv[qualifier]; !ok {
+					qv[qualifier] = make(map[string]cty.Value)
+				}
+				qv[qualifier][blkName] = obj
+				obj = cty.ObjectVal(qv[qualifier])
+				v[qualifier] = obj
+			default:
+				v[blkName] = cty.ObjectVal(attrs)
 			}
-			v[key] = obj
 		}
 		if len(v) > 0 {
 			vars[name] = cty.ObjectVal(v)
@@ -226,11 +230,11 @@ var (
 	ctySchemaLit = cty.CapsuleWithOps("lit", reflect.TypeOf(LiteralValue{}), &cty.CapsuleOps{
 		// ConversionFrom facilitates reading the encapsulated type as a string, as is needed, for example,
 		// when interpolating it in a string expression.
-		ConversionFrom: func(src cty.Type) func(interface{}, cty.Path) (cty.Value, error) {
+		ConversionFrom: func(src cty.Type) func(any, cty.Path) (cty.Value, error) {
 			if src != cty.String {
 				return nil
 			}
-			return func(i interface{}, path cty.Path) (cty.Value, error) {
+			return func(i any, path cty.Path) (cty.Value, error) {
 				lit, ok := i.(*LiteralValue)
 				if !ok {
 					return cty.Value{}, fmt.Errorf("schemahcl: expected *schemahcl.LiteralValue got %T", i)

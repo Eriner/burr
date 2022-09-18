@@ -10,6 +10,7 @@ import (
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/eriner/burr/internal/ent/actor"
 	"github.com/eriner/burr/internal/ent/server"
 )
 
@@ -74,6 +75,47 @@ func (sc *ServerCreate) SetNillableUpdatedBy(i *int) *ServerCreate {
 		sc.SetUpdatedBy(*i)
 	}
 	return sc
+}
+
+// SetDomain sets the "domain" field.
+func (sc *ServerCreate) SetDomain(s string) *ServerCreate {
+	sc.mutation.SetDomain(s)
+	return sc
+}
+
+// SetLastSeen sets the "last_seen" field.
+func (sc *ServerCreate) SetLastSeen(t time.Time) *ServerCreate {
+	sc.mutation.SetLastSeen(t)
+	return sc
+}
+
+// SetNillableLastSeen sets the "last_seen" field if the given value is not nil.
+func (sc *ServerCreate) SetNillableLastSeen(t *time.Time) *ServerCreate {
+	if t != nil {
+		sc.SetLastSeen(*t)
+	}
+	return sc
+}
+
+// SetID sets the "id" field.
+func (sc *ServerCreate) SetID(u uint64) *ServerCreate {
+	sc.mutation.SetID(u)
+	return sc
+}
+
+// AddActorIDs adds the "actors" edge to the Actor entity by IDs.
+func (sc *ServerCreate) AddActorIDs(ids ...uint64) *ServerCreate {
+	sc.mutation.AddActorIDs(ids...)
+	return sc
+}
+
+// AddActors adds the "actors" edges to the Actor entity.
+func (sc *ServerCreate) AddActors(a ...*Actor) *ServerCreate {
+	ids := make([]uint64, len(a))
+	for i := range a {
+		ids[i] = a[i].ID
+	}
+	return sc.AddActorIDs(ids...)
 }
 
 // Mutation returns the ServerMutation object of the builder.
@@ -169,6 +211,13 @@ func (sc *ServerCreate) defaults() error {
 		v := server.DefaultUpdatedAt()
 		sc.mutation.SetUpdatedAt(v)
 	}
+	if _, ok := sc.mutation.LastSeen(); !ok {
+		if server.DefaultLastSeen == nil {
+			return fmt.Errorf("ent: uninitialized server.DefaultLastSeen (forgotten import ent/runtime?)")
+		}
+		v := server.DefaultLastSeen()
+		sc.mutation.SetLastSeen(v)
+	}
 	return nil
 }
 
@@ -179,6 +228,17 @@ func (sc *ServerCreate) check() error {
 	}
 	if _, ok := sc.mutation.UpdatedAt(); !ok {
 		return &ValidationError{Name: "updated_at", err: errors.New(`ent: missing required field "Server.updated_at"`)}
+	}
+	if _, ok := sc.mutation.Domain(); !ok {
+		return &ValidationError{Name: "domain", err: errors.New(`ent: missing required field "Server.domain"`)}
+	}
+	if v, ok := sc.mutation.Domain(); ok {
+		if err := server.DomainValidator(v); err != nil {
+			return &ValidationError{Name: "domain", err: fmt.Errorf(`ent: validator failed for field "Server.domain": %w`, err)}
+		}
+	}
+	if _, ok := sc.mutation.LastSeen(); !ok {
+		return &ValidationError{Name: "last_seen", err: errors.New(`ent: missing required field "Server.last_seen"`)}
 	}
 	return nil
 }
@@ -191,8 +251,10 @@ func (sc *ServerCreate) sqlSave(ctx context.Context) (*Server, error) {
 		}
 		return nil, err
 	}
-	id := _spec.ID.Value.(int64)
-	_node.ID = int(id)
+	if _spec.ID.Value != _node.ID {
+		id := _spec.ID.Value.(int64)
+		_node.ID = uint64(id)
+	}
 	return _node, nil
 }
 
@@ -202,11 +264,15 @@ func (sc *ServerCreate) createSpec() (*Server, *sqlgraph.CreateSpec) {
 		_spec = &sqlgraph.CreateSpec{
 			Table: server.Table,
 			ID: &sqlgraph.FieldSpec{
-				Type:   field.TypeInt,
+				Type:   field.TypeUint64,
 				Column: server.FieldID,
 			},
 		}
 	)
+	if id, ok := sc.mutation.ID(); ok {
+		_node.ID = id
+		_spec.ID.Value = id
+	}
 	if value, ok := sc.mutation.CreatedAt(); ok {
 		_spec.Fields = append(_spec.Fields, &sqlgraph.FieldSpec{
 			Type:   field.TypeTime,
@@ -238,6 +304,41 @@ func (sc *ServerCreate) createSpec() (*Server, *sqlgraph.CreateSpec) {
 			Column: server.FieldUpdatedBy,
 		})
 		_node.UpdatedBy = value
+	}
+	if value, ok := sc.mutation.Domain(); ok {
+		_spec.Fields = append(_spec.Fields, &sqlgraph.FieldSpec{
+			Type:   field.TypeString,
+			Value:  value,
+			Column: server.FieldDomain,
+		})
+		_node.Domain = value
+	}
+	if value, ok := sc.mutation.LastSeen(); ok {
+		_spec.Fields = append(_spec.Fields, &sqlgraph.FieldSpec{
+			Type:   field.TypeTime,
+			Value:  value,
+			Column: server.FieldLastSeen,
+		})
+		_node.LastSeen = value
+	}
+	if nodes := sc.mutation.ActorsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   server.ActorsTable,
+			Columns: []string{server.ActorsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: &sqlgraph.FieldSpec{
+					Type:   field.TypeUint64,
+					Column: actor.FieldID,
+				},
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec
 }
@@ -283,9 +384,9 @@ func (scb *ServerCreateBulk) Save(ctx context.Context) ([]*Server, error) {
 					return nil, err
 				}
 				mutation.id = &nodes[i].ID
-				if specs[i].ID.Value != nil {
+				if specs[i].ID.Value != nil && nodes[i].ID == 0 {
 					id := specs[i].ID.Value.(int64)
-					nodes[i].ID = int(id)
+					nodes[i].ID = uint64(id)
 				}
 				mutation.done = true
 				return nodes[i], nil
