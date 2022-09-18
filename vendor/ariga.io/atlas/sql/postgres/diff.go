@@ -164,6 +164,9 @@ func (*diff) IndexAttrChanged(from, to []schema.Attr) bool {
 	if sqlx.Has(from, &p1) != sqlx.Has(to, &p2) || (p1.P != p2.P && p1.P != sqlx.MayWrap(p2.P)) {
 		return true
 	}
+	if indexIncludeChanged(from, to) {
+		return true
+	}
 	s1, ok1 := indexStorageParams(from)
 	s2, ok2 := indexStorageParams(to)
 	return ok1 != ok2 || ok1 && *s1 != *s2
@@ -213,12 +216,11 @@ func (d *diff) typeChanged(from, to *schema.Column) (bool, error) {
 			return false, err
 		}
 		changed = t1 != t2
-	case *enumType:
-		toT := toT.(*schema.EnumType)
-		changed = fromT.T != toT.T || !sqlx.ValuesEqual(fromT.Values, toT.Values)
 	case *schema.EnumType:
 		toT := toT.(*schema.EnumType)
-		changed = fromT.T != toT.T || !sqlx.ValuesEqual(fromT.Values, toT.Values)
+		// Column type was changed if the underlying enum type was changed or values are not equal.
+		changed = !sqlx.ValuesEqual(fromT.Values, toT.Values) || fromT.T != toT.T ||
+			(toT.Schema != nil && fromT.Schema != nil && fromT.Schema.Name != toT.Schema.Name)
 	case *CurrencyType:
 		toT := toT.(*CurrencyType)
 		changed = fromT.T != toT.T
@@ -232,6 +234,10 @@ func (d *diff) typeChanged(from, to *schema.Column) (bool, error) {
 		toT := toT.(*ArrayType)
 		// Same type.
 		if changed = fromT.T != toT.T; !changed {
+			// In case it is an enum type, compare its values.
+			fromE, ok1 := fromT.Type.(*schema.EnumType)
+			toE, ok2 := toT.Type.(*schema.EnumType)
+			changed = ok1 && ok2 && !sqlx.ValuesEqual(fromE.Values, toE.Values)
 			break
 		}
 		// In case the desired schema is not normalized, the string type can look different even
@@ -253,56 +259,6 @@ func (d *diff) typeChanged(from, to *schema.Column) (bool, error) {
 		return false, &sqlx.UnsupportedTypeError{Type: fromT}
 	}
 	return changed, nil
-}
-
-// Normalize implements the sqlx.Normalizer interface.
-func (d *diff) Normalize(from, to *schema.Table) error {
-	d.normalize(from)
-	d.normalize(to)
-	return nil
-}
-
-func (d *diff) normalize(table *schema.Table) {
-	for _, c := range table.Columns {
-		switch t := c.Type.Type.(type) {
-		case nil:
-		case *schema.TimeType:
-			// "timestamp" and "timestamptz" are accepted as
-			// abbreviations for timestamp with(out) time zone.
-			switch t.T {
-			case "timestamp with time zone":
-				t.T = "timestamptz"
-			case "timestamp without time zone":
-				t.T = "timestamp"
-			}
-		case *schema.FloatType:
-			// The same numeric precision is used in all platform.
-			// See: https://www.postgresql.org/docs/current/datatype-numeric.html
-			switch {
-			case t.T == "float" && t.Precision < 25:
-				// float(1) to float(24) are selected as "real" type.
-				t.T = "real"
-				fallthrough
-			case t.T == "real":
-				t.Precision = 24
-			case t.T == "float" && t.Precision >= 25:
-				// float(25) to float(53) are selected as "double precision" type.
-				t.T = "double precision"
-				fallthrough
-			case t.T == "double precision":
-				t.Precision = 53
-			}
-		case *schema.StringType:
-			switch t.T {
-			case "character", "char":
-				// Character without length specifier
-				// is equivalent to character(1).
-				t.Size = 1
-			}
-		case *enumType:
-			c.Type.Type = &schema.EnumType{T: t.T, Values: t.Values}
-		}
-	}
 }
 
 // valuesEqual reports if the DEFAULT values x and y
@@ -362,7 +318,8 @@ func identity(attrs []schema.Attr) (*Identity, bool) {
 // formatPartition returns the string representation of the
 // partition key according to the PostgreSQL format/grammar.
 func formatPartition(p Partition) (string, error) {
-	b := Build("PARTITION BY")
+	b := &sqlx.Builder{QuoteChar: '"'}
+	b.P("PARTITION BY")
 	switch t := strings.ToUpper(p.T); t {
 	case PartitionTypeRange, PartitionTypeList, PartitionTypeHash:
 		b.P(t)
@@ -396,6 +353,20 @@ func indexStorageParams(attrs []schema.Attr) (*IndexStorageParams, bool) {
 		return nil, false
 	}
 	return s, true
+}
+
+// indexIncludeChanged reports if the INCLUDE attribute clause was changed.
+func indexIncludeChanged(from, to []schema.Attr) bool {
+	var fromI, toI IndexInclude
+	if sqlx.Has(from, &fromI) != sqlx.Has(to, &toI) || len(fromI.Columns) != len(toI.Columns) {
+		return true
+	}
+	for i := range fromI.Columns {
+		if fromI.Columns[i].Name != toI.Columns[i].Name {
+			return true
+		}
+	}
+	return false
 }
 
 func trimCast(s string) string {

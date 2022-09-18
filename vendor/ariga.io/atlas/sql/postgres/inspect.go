@@ -27,16 +27,19 @@ func (i *inspect) InspectRealm(ctx context.Context, opts *schema.InspectRealmOpt
 	if err != nil {
 		return nil, err
 	}
+	if opts == nil {
+		opts = &schema.InspectRealmOption{}
+	}
 	r := schema.NewRealm(schemas...).SetCollation(i.collate)
 	r.Attrs = append(r.Attrs, &CType{V: i.ctype})
 	if len(schemas) == 0 || !sqlx.ModeInspectRealm(opts).Is(schema.InspectTables) {
-		return r, nil
+		return sqlx.ExcludeRealm(r, opts.Exclude)
 	}
 	if err := i.inspectTables(ctx, r, nil); err != nil {
 		return nil, err
 	}
 	sqlx.LinkSchemaTables(schemas)
-	return r, nil
+	return sqlx.ExcludeRealm(r, opts.Exclude)
 }
 
 // InspectSchema returns schema descriptions of the tables in the given schema.
@@ -52,6 +55,9 @@ func (i *inspect) InspectSchema(ctx context.Context, name string, opts *schema.I
 	case n > 1:
 		return nil, fmt.Errorf("postgres: %d schemas were found for %q", n, name)
 	}
+	if opts == nil {
+		opts = &schema.InspectOptions{}
+	}
 	r := schema.NewRealm(schemas...).SetCollation(i.collate)
 	r.Attrs = append(r.Attrs, &CType{V: i.ctype})
 	if sqlx.ModeInspectSchema(opts).Is(schema.InspectTables) {
@@ -60,7 +66,7 @@ func (i *inspect) InspectSchema(ctx context.Context, name string, opts *schema.I
 		}
 		sqlx.LinkSchemaTables(schemas)
 	}
-	return r.Schemas[0], nil
+	return sqlx.ExcludeSchema(r.Schemas[0], opts.Exclude)
 }
 
 func (i *inspect) inspectTables(ctx context.Context, r *schema.Realm, opts *schema.InspectOptions) error {
@@ -93,7 +99,7 @@ func (i *inspect) inspectTables(ctx context.Context, r *schema.Realm, opts *sche
 // table returns the table from the database, or a NotExistError if the table was not found.
 func (i *inspect) tables(ctx context.Context, realm *schema.Realm, opts *schema.InspectOptions) error {
 	var (
-		args  []interface{}
+		args  []any
 		query = fmt.Sprintf(tablesQuery, nArgs(0, len(realm.Schemas)))
 	)
 	for _, s := range realm.Schemas {
@@ -166,12 +172,12 @@ func (i *inspect) columns(ctx context.Context, s *schema.Schema) error {
 // addColumn scans the current row and adds a new column from it to the table.
 func (i *inspect) addColumn(s *schema.Schema, rows *sql.Rows) (err error) {
 	var (
-		typid, maxlen, precision, timeprecision, scale, seqstart, seqinc, seqlast                                                  sql.NullInt64
-		table, name, typ, fmtype, nullable, defaults, identity, genidentity, genexpr, charset, collate, comment, typtype, interval sql.NullString
+		typid, typelem, maxlen, precision, timeprecision, scale, seqstart, seqinc, seqlast                                                  sql.NullInt64
+		table, name, typ, fmtype, nullable, defaults, identity, genidentity, genexpr, charset, collate, comment, typtype, elemtyp, interval sql.NullString
 	)
 	if err = rows.Scan(
-		&table, &name, &typ, &fmtype, &nullable, &defaults, &maxlen, &precision, &timeprecision, &scale, &interval,
-		&charset, &collate, &identity, &seqstart, &seqinc, &seqlast, &genidentity, &genexpr, &comment, &typtype, &typid,
+		&table, &name, &typ, &fmtype, &nullable, &defaults, &maxlen, &precision, &timeprecision, &scale, &interval, &charset,
+		&collate, &identity, &seqstart, &seqinc, &seqlast, &genidentity, &genexpr, &comment, &typtype, &typelem, &elemtyp, &typid,
 	); err != nil {
 		return err
 	}
@@ -192,6 +198,8 @@ func (i *inspect) addColumn(s *schema.Schema, rows *sql.Rows) (err error) {
 		size:          maxlen.Int64,
 		scale:         scale.Int64,
 		typtype:       typtype.String,
+		typelem:       typelem.Int64,
+		elemtyp:       elemtyp.String,
 		typid:         typid.Int64,
 		interval:      interval.String,
 		precision:     precision.Int64,
@@ -228,105 +236,37 @@ func (i *inspect) addColumn(s *schema.Schema, rows *sql.Rows) (err error) {
 	return nil
 }
 
-func columnType(c *columnDesc) (schema.Type, error) {
-	var typ schema.Type
-	switch t := c.typ; strings.ToLower(t) {
-	case TypeBigInt, TypeInt8, TypeInt, TypeInteger, TypeInt4, TypeSmallInt, TypeInt2, TypeInt64:
-		typ = &schema.IntegerType{T: t}
-	case TypeBit, TypeBitVar:
-		typ = &BitType{T: t, Len: c.size}
-	case TypeBool, TypeBoolean:
-		typ = &schema.BoolType{T: t}
-	case TypeBytea:
-		typ = &schema.BinaryType{T: t}
-	case TypeCharacter, TypeChar, TypeCharVar, TypeVarChar, TypeText:
-		// A `character` column without length specifier is equivalent to `character(1)`,
-		// but `varchar` without length accepts strings of any size (same as `text`).
-		typ = &schema.StringType{T: t, Size: int(c.size)}
-	case TypeCIDR, TypeInet, TypeMACAddr, TypeMACAddr8:
-		typ = &NetworkType{T: t}
-	case TypeCircle, TypeLine, TypeLseg, TypeBox, TypePath, TypePolygon, TypePoint, TypeGeometry:
-		typ = &schema.SpatialType{T: t}
-	case TypeDate:
-		typ = &schema.TimeType{T: t}
-	case TypeTime, TypeTimeWOTZ, TypeTimeTZ, TypeTimeWTZ, TypeTimestamp,
-		TypeTimestampTZ, TypeTimestampWTZ, TypeTimestampWOTZ:
-		p := defaultTimePrecision
-		if c.timePrecision != nil {
-			p = int(*c.timePrecision)
-		}
-		typ = &schema.TimeType{T: t, Precision: &p}
-	case TypeInterval:
-		p := defaultTimePrecision
-		if c.timePrecision != nil {
-			p = int(*c.timePrecision)
-		}
-		typ = &IntervalType{T: t, Precision: &p}
-		if c.interval != "" {
-			f, ok := intervalField(c.interval)
-			if !ok {
-				return &schema.UnsupportedType{T: c.interval}, nil
-			}
-			typ.(*IntervalType).F = f
-		}
-	case TypeReal, TypeDouble, TypeFloat4, TypeFloat8:
-		typ = &schema.FloatType{T: t, Precision: int(c.precision)}
-	case TypeJSON, TypeJSONB:
-		typ = &schema.JSONType{T: t}
-	case TypeMoney:
-		typ = &CurrencyType{T: t}
-	case TypeDecimal, TypeNumeric:
-		typ = &schema.DecimalType{T: t, Precision: int(c.precision), Scale: int(c.scale)}
-	case TypeSmallSerial, TypeSerial, TypeBigSerial, TypeSerial2, TypeSerial4, TypeSerial8:
-		typ = &SerialType{T: t, Precision: int(c.precision)}
-	case TypeUUID:
-		typ = &UUIDType{T: t}
-	case TypeXML:
-		typ = &XMLType{T: t}
-	case TypeArray:
-		// Ignore multi-dimensions or size constraints
-		// as they are ignored by the database.
-		typ = &ArrayType{T: c.fmtype}
-		if t, ok := arrayType(c.fmtype); ok {
-			tt, err := ParseType(t)
-			if err != nil {
-				return nil, err
-			}
-			typ.(*ArrayType).Type = tt
-		}
-	case TypeUserDefined:
-		typ = &UserDefinedType{T: c.fmtype}
-		// The `typtype` column is set to 'e' for enum types, and the
-		// values are filled in batch after the rows above is closed.
-		// https://postgresql.org/docs/current/catalog-pg-type.html
-		if c.typtype == "e" {
-			typ = &enumType{T: c.fmtype, ID: c.typid}
-		}
-	default:
-		typ = &schema.UnsupportedType{T: t}
-	}
-	return typ, nil
-}
-
 // enumValues fills enum columns with their values from the database.
 func (i *inspect) enumValues(ctx context.Context, s *schema.Schema) error {
 	var (
-		args  []interface{}
+		args  []any
 		ids   = make(map[int64][]*schema.EnumType)
 		query = "SELECT enumtypid, enumlabel FROM pg_enum WHERE enumtypid IN (%s)"
+		newE  = func(e1 *enumType) *schema.EnumType {
+			if _, ok := ids[e1.ID]; !ok {
+				args = append(args, e1.ID)
+			}
+			// Convert the intermediate type to
+			// the standard schema.EnumType.
+			e2 := &schema.EnumType{T: e1.T, Schema: s}
+			if e1.Schema != "" && e1.Schema != s.Name {
+				e2.Schema = schema.New(e1.Schema)
+			}
+			ids[e1.ID] = append(ids[e1.ID], e2)
+			return e2
+		}
 	)
 	for _, t := range s.Tables {
 		for _, c := range t.Columns {
-			if enum, ok := c.Type.Type.(*enumType); ok {
-				if _, ok := ids[enum.ID]; !ok {
-					args = append(args, enum.ID)
-				}
-				// Convert the intermediate type to the
-				// standard schema.EnumType.
-				e := &schema.EnumType{T: enum.T}
+			switch t := c.Type.Type.(type) {
+			case *enumType:
+				e := newE(t)
 				c.Type.Type = e
-				c.Type.Raw = enum.T
-				ids[enum.ID] = append(ids[enum.ID], e)
+				c.Type.Raw = e.T
+			case *ArrayType:
+				if e, ok := t.Type.(*enumType); ok {
+					t.Type = newE(e)
+				}
 			}
 		}
 	}
@@ -355,10 +295,14 @@ func (i *inspect) enumValues(ctx context.Context, s *schema.Schema) error {
 
 // indexes queries and appends the indexes of the given table.
 func (i *inspect) indexes(ctx context.Context, s *schema.Schema) error {
-	if i.conn.crdb {
+	query := indexesQuery
+	switch {
+	case i.conn.crdb:
 		return i.crdbIndexes(ctx, s)
+	case !i.conn.supportsIndexInclude():
+		query = indexesQueryNoInclude
 	}
-	rows, err := i.querySchema(ctx, indexesQuery, s)
+	rows, err := i.querySchema(ctx, query, s)
 	if err != nil {
 		return fmt.Errorf("postgres: querying schema %q indexes: %w", s.Name, err)
 	}
@@ -374,12 +318,12 @@ func (i *inspect) addIndexes(s *schema.Schema, rows *sql.Rows) error {
 	names := make(map[string]*schema.Index)
 	for rows.Next() {
 		var (
-			uniq, primary                                 bool
+			uniq, primary, included                       bool
 			table, name, typ                              string
 			desc, nullsfirst, nullslast                   sql.NullBool
 			column, contype, pred, expr, comment, options sql.NullString
 		)
-		if err := rows.Scan(&table, &name, &typ, &column, &primary, &uniq, &contype, &pred, &expr, &desc, &nullsfirst, &nullslast, &comment, &options); err != nil {
+		if err := rows.Scan(&table, &name, &typ, &column, &included, &primary, &uniq, &contype, &pred, &expr, &desc, &nullsfirst, &nullslast, &comment, &options); err != nil {
 			return fmt.Errorf("postgres: scanning indexes for schema %q: %w", s.Name, err)
 		}
 		t, ok := s.Table(table)
@@ -427,20 +371,30 @@ func (i *inspect) addIndexes(s *schema.Schema, rows *sql.Rows) error {
 			})
 		}
 		switch {
+		case included:
+			c, ok := t.Column(column.String)
+			if !ok {
+				return fmt.Errorf("postgres: INCLUDE column %q was not found for index %q", column.String, idx.Name)
+			}
+			var include IndexInclude
+			sqlx.Has(idx.Attrs, &include)
+			include.Columns = append(include.Columns, c)
+			schema.ReplaceOrAppend(&idx.Attrs, &include)
 		case sqlx.ValidString(column):
 			part.C, ok = t.Column(column.String)
 			if !ok {
 				return fmt.Errorf("postgres: column %q was not found for index %q", column.String, idx.Name)
 			}
 			part.C.Indexes = append(part.C.Indexes, idx)
+			idx.Parts = append(idx.Parts, part)
 		case sqlx.ValidString(expr):
 			part.X = &schema.RawExpr{
 				X: expr.String,
 			}
+			idx.Parts = append(idx.Parts, part)
 		default:
 			return fmt.Errorf("postgres: invalid part for index %q", idx.Name)
 		}
-		idx.Parts = append(idx.Parts, part)
 	}
 	return nil
 }
@@ -557,7 +511,7 @@ func (i *inspect) addChecks(s *schema.Schema, rows *sql.Rows) error {
 // schemas returns the list of the schemas in the database.
 func (i *inspect) schemas(ctx context.Context, opts *schema.InspectRealmOption) ([]*schema.Schema, error) {
 	var (
-		args  []interface{}
+		args  []any
 		query = schemasQuery
 	)
 	if opts != nil {
@@ -596,7 +550,7 @@ func (i *inspect) schemas(ctx context.Context, opts *schema.InspectRealmOption) 
 }
 
 func (i *inspect) querySchema(ctx context.Context, query string, s *schema.Schema) (*sql.Rows, error) {
-	args := []interface{}{s.Name}
+	args := []any{s.Name}
 	for _, t := range s.Tables {
 		args = append(args, t.Name)
 	}
@@ -615,10 +569,10 @@ func nArgs(start, n int) string {
 	return b.String()
 }
 
-var nextval = regexp.MustCompile(`(?i) *nextval\('(?:[\w$]+\.)*([\w$]+_[\w$]+_seq)'(?:::regclass)*\) *$`)
+var reNextval = regexp.MustCompile(`(?i) *nextval\('(?:[\w$]+\.)*([\w$]+_[\w$]+_seq)'(?:::regclass)*\) *$`)
 
 func defaultExpr(c *schema.Column, s string) {
-	switch m := nextval.FindStringSubmatch(s); {
+	switch m := reNextval.FindStringSubmatch(s); {
 	// The definition of "<column> <serial type>" is equivalent to specifying:
 	// "<column> <int type> NOT NULL DEFAULT nextval('<table>_<column>_seq')".
 	// https://postgresql.org/docs/current/datatype-numeric.html#DATATYPE-SERIAL.
@@ -644,17 +598,15 @@ func defaultExpr(c *schema.Column, s string) {
 }
 
 func canConvert(t *schema.ColumnType, x string) (string, bool) {
-	r := t.Raw
-	if t, ok := t.Type.(*ArrayType); ok {
-		r = t.T
-	}
-	i := strings.Index(x, "::"+r)
+	i := strings.LastIndex(x, "::")
 	if i == -1 || !sqlx.IsQuoted(x[:i], '\'') {
 		return "", false
 	}
 	q := x[0:i]
 	x = x[1 : i-1]
 	switch t.Type.(type) {
+	case *enumType:
+		return q, true
 	case *schema.BoolType:
 		if sqlx.IsLiteralBool(x) {
 			return x, true
@@ -687,6 +639,7 @@ type (
 	enumType struct {
 		schema.Type
 		T      string // Type name.
+		Schema string // Optional schema name.
 		ID     int64  // Type id.
 		Values []string
 	}
@@ -811,6 +764,14 @@ type (
 		PagesPerRange int64
 	}
 
+	// IndexInclude describes the INCLUDE clause allows specifying
+	// a list of column which added to the index as non-key columns.
+	// https://www.postgresql.org/docs/current/sql-createindex.html
+	IndexInclude struct {
+		schema.Attr
+		Columns []*schema.Column
+	}
+
 	// NoInherit attribute defines the NO INHERIT flag for CHECK constraint.
 	// https://postgresql.org/docs/current/catalog-pg-constraint.html
 	NoInherit struct {
@@ -910,6 +871,30 @@ func newIndexStorage(opts string) (*IndexStorageParams, error) {
 	return params, nil
 }
 
+// reEnumType extracts the enum type and an option schema qualifier.
+var reEnumType = regexp.MustCompile(`^(?:(".+"|\w+)\.)?(".+"|\w+)$`)
+
+func newEnumType(t string, id int64) *enumType {
+	var (
+		e     = &enumType{T: t, ID: id}
+		parts = reEnumType.FindStringSubmatch(e.T)
+		r     = func(s string) string {
+			s = strings.ReplaceAll(s, `""`, `"`)
+			if len(s) > 1 && s[0] == '"' && s[len(s)-1] == '"' {
+				s = s[1 : len(s)-1]
+			}
+			return s
+		}
+	)
+	if len(parts) > 1 {
+		e.Schema = r(parts[1])
+	}
+	if len(parts) > 2 {
+		e.T = r(parts[2])
+	}
+	return e
+}
+
 const (
 	// Query to list runtime parameters.
 	paramsQuery = `SELECT setting FROM pg_settings WHERE name IN ('lc_collate', 'lc_ctype', 'server_version_num', 'crdb_version') ORDER BY name DESC`
@@ -986,56 +971,19 @@ SELECT
 	t1.generation_expression,
 	col_description(t3.oid, "ordinal_position") AS comment,
 	t4.typtype,
+	t4.typelem,
+	(CASE WHEN t4.typcategory = 'A' AND t4.typelem <> 0 THEN (SELECT t.typtype FROM pg_catalog.pg_type t WHERE t.oid = t4.typelem) END) AS elemtyp,
 	t4.oid
 FROM
 	"information_schema"."columns" AS t1
 	JOIN pg_catalog.pg_namespace AS t2 ON t2.nspname = t1.table_schema
 	JOIN pg_catalog.pg_class AS t3 ON t3.relnamespace = t2.oid AND t3.relname = t1.table_name
 	JOIN pg_catalog.pg_attribute AS a ON a.attrelid = t3.oid AND a.attname = t1.column_name
-	LEFT JOIN pg_catalog.pg_type AS t4 ON t1.udt_name = t4.typname
+	LEFT JOIN pg_catalog.pg_type AS t4 ON t1.udt_name = t4.typname AND t4.typnamespace = t2.oid
 WHERE
 	t1.table_schema = $1 AND t1.table_name IN (%s)
 ORDER BY
 	t1.table_name, t1.ordinal_position
-`
-
-	// Query to list table indexes.
-	indexesQuery = `
-SELECT
-	t.relname AS table_name,
-	i.relname AS index_name,
-	am.amname AS index_type,
-	a.attname AS column_name,
-	idx.indisprimary AS primary,
-	idx.indisunique AS unique,
-	c.contype AS constraint_type,
-	pg_get_expr(idx.indpred, idx.indrelid) AS predicate,
-	pg_get_indexdef(idx.indexrelid, idx.ord, false) AS expression,
-	pg_index_column_has_property(idx.indexrelid, idx.ord, 'desc') AS desc,
-	pg_index_column_has_property(idx.indexrelid, idx.ord, 'nulls_first') AS nulls_first,
-	pg_index_column_has_property(idx.indexrelid, idx.ord, 'nulls_last') AS nulls_last,
-	obj_description(i.oid, 'pg_class') AS comment,
-	i.reloptions AS options
-FROM
-	(
-		select
-			*,
-			generate_series(1,array_length(i.indkey,1)) as ord,
-			unnest(i.indkey) AS key
-		from pg_index i
-	) idx
-	JOIN pg_class i ON i.oid = idx.indexrelid
-	JOIN pg_class t ON t.oid = idx.indrelid
-	JOIN pg_namespace n ON n.oid = t.relnamespace
-	LEFT JOIN pg_constraint c ON idx.indexrelid = c.conindid
-	LEFT JOIN pg_attribute a ON (a.attrelid, a.attnum) = (idx.indrelid, idx.key)
-	JOIN pg_am am ON am.oid = i.relam
-WHERE
-	n.nspname = $1
-	AND t.relname IN (%s)
-	AND COALESCE(c.contype, '') <> 'f'
-ORDER BY
-	table_name, index_name, idx.ord
 `
 	fksQuery = `
 SELECT
@@ -1092,5 +1040,48 @@ WHERE
 	AND rel.relname IN (%s)
 ORDER BY
 	t1.conname, array_position(t1.conkey, t2.attnum)
+`
+)
+
+var (
+	indexesQuery          = fmt.Sprintf(indexesQueryTmpl, "(a.attname <> '' AND idx.indnatts > idx.indnkeyatts AND idx.ord > idx.indnkeyatts)", "%s")
+	indexesQueryNoInclude = fmt.Sprintf(indexesQueryTmpl, "false", "%s")
+	indexesQueryTmpl      = `
+SELECT
+	t.relname AS table_name,
+	i.relname AS index_name,
+	am.amname AS index_type,
+	a.attname AS column_name,
+	%s AS included,
+	idx.indisprimary AS primary,
+	idx.indisunique AS unique,
+	c.contype AS constraint_type,
+	pg_get_expr(idx.indpred, idx.indrelid) AS predicate,
+	pg_get_indexdef(idx.indexrelid, idx.ord, false) AS expression,
+	pg_index_column_has_property(idx.indexrelid, idx.ord, 'desc') AS desc,
+	pg_index_column_has_property(idx.indexrelid, idx.ord, 'nulls_first') AS nulls_first,
+	pg_index_column_has_property(idx.indexrelid, idx.ord, 'nulls_last') AS nulls_last,
+	obj_description(i.oid, 'pg_class') AS comment,
+	i.reloptions AS options
+FROM
+	(
+		select
+			*,
+			generate_series(1,array_length(i.indkey,1)) as ord,
+			unnest(i.indkey) AS key
+		from pg_index i
+	) idx
+	JOIN pg_class i ON i.oid = idx.indexrelid
+	JOIN pg_class t ON t.oid = idx.indrelid
+	JOIN pg_namespace n ON n.oid = t.relnamespace
+	LEFT JOIN pg_constraint c ON idx.indexrelid = c.conindid
+	LEFT JOIN pg_attribute a ON (a.attrelid, a.attnum) = (idx.indrelid, idx.key)
+	JOIN pg_am am ON am.oid = i.relam
+WHERE
+	n.nspname = $1
+	AND t.relname IN (%s)
+	AND COALESCE(c.contype, '') <> 'f'
+ORDER BY
+	table_name, index_name, idx.ord
 `
 )

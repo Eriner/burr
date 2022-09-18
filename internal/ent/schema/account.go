@@ -250,6 +250,11 @@ func (Account) Edges() []ent.Edge {
 		edge.From("groups", Group.Type).
 			Ref("accounts").
 			Comment("Accounts can belong to one or more groups"),
+
+		// NOTE: Events should belong to groups, not accounts.
+		// edge.From("events", Event.Type).
+		//	Ref("accounts").
+		//	Comment("Accounts can belong to one or more events"),
 	}
 }
 

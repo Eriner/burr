@@ -11,13 +11,13 @@ import (
 	"fmt"
 	"hash/fnv"
 	"net/url"
+	"strconv"
 	"time"
 
 	"ariga.io/atlas/sql/internal/sqlx"
 	"ariga.io/atlas/sql/migrate"
 	"ariga.io/atlas/sql/schema"
 	"ariga.io/atlas/sql/sqlclient"
-	"golang.org/x/mod/semver"
 )
 
 type (
@@ -37,7 +37,7 @@ type (
 		// System variables that are set on `Open`.
 		collate string
 		ctype   string
-		version string
+		version int
 		crdb    bool
 	}
 )
@@ -50,6 +50,7 @@ func init() {
 		DriverName,
 		sqlclient.OpenerFunc(opener),
 		sqlclient.RegisterDriverOpener(Open),
+		sqlclient.RegisterFlavours("postgresql"),
 		sqlclient.RegisterCodec(MarshalHCL, EvalHCL),
 		sqlclient.RegisterURLParser(parser{}),
 	)
@@ -91,13 +92,12 @@ func Open(db schema.ExecQuerier) (migrate.Driver, error) {
 	if len(params) != 3 && len(params) != 4 {
 		return nil, fmt.Errorf("postgres: unexpected number of rows: %d", len(params))
 	}
-	c.version, c.ctype, c.collate = params[0], params[1], params[2]
-	if len(c.version) != 6 {
-		return nil, fmt.Errorf("postgres: malformed version: %s", c.version)
+	c.ctype, c.collate = params[1], params[2]
+	if c.version, err = strconv.Atoi(params[0]); err != nil {
+		return nil, fmt.Errorf("postgres: malformed version: %s: %w", params[0], err)
 	}
-	c.version = fmt.Sprintf("%s.%s.%s", c.version[:2], c.version[2:4], c.version[4:])
-	if semver.Compare("v"+c.version, "v10.0.0") != -1 {
-		return nil, fmt.Errorf("postgres: unsupported postgres version: %s", c.version)
+	if c.version < 10_00_00 {
+		return nil, fmt.Errorf("postgres: unsupported postgres version: %d", c.version)
 	}
 	// Means we are connected to CockroachDB because we have a result for name='crdb_version'. see `paramsQuery`.
 	if c.crdb = len(params) == 4; c.crdb {
@@ -117,7 +117,15 @@ func Open(db schema.ExecQuerier) (migrate.Driver, error) {
 }
 
 func (d *Driver) dev() *sqlx.DevDriver {
-	return &sqlx.DevDriver{Driver: d, MaxNameLen: 63}
+	return &sqlx.DevDriver{
+		Driver:     d,
+		MaxNameLen: 63,
+		PatchColumn: func(s *schema.Schema, c *schema.Column) {
+			if e, ok := hasEnumType(c); ok {
+				e.Schema = s
+			}
+		},
+	}
 }
 
 // NormalizeRealm returns the normal representation of the given database.
@@ -212,6 +220,36 @@ func (d *Driver) Snapshot(ctx context.Context) (migrate.RestoreFunc, error) {
 	return nil, migrate.NotCleanError{Reason: fmt.Sprintf("found schema %q", realm.Schemas[0].Name)}
 }
 
+// CheckClean implements migrate.CleanChecker.
+func (d *Driver) CheckClean(ctx context.Context, revT *migrate.TableIdent) error {
+	if d.schema != "" {
+		switch s, err := d.InspectSchema(ctx, d.schema, nil); {
+		case err != nil:
+			return err
+		case len(s.Tables) == 0, (revT.Schema == "" || s.Name == revT.Schema) && len(s.Tables) == 1 && s.Tables[0].Name == revT.Name:
+			return nil
+		default:
+			return &migrate.NotCleanError{Reason: fmt.Sprintf("found table %q in schema %q", s.Tables[0].Name, s.Name)}
+		}
+	}
+	r, err := d.InspectRealm(ctx, nil)
+	if err != nil {
+		return err
+	}
+	for _, s := range r.Schemas {
+		switch {
+		case len(s.Tables) == 0 && s.Name == "public":
+		case len(s.Tables) == 0 || s.Name != revT.Schema:
+			return &migrate.NotCleanError{Reason: fmt.Sprintf("found schema %q", s.Name)}
+		case len(s.Tables) > 1:
+			return &migrate.NotCleanError{Reason: fmt.Sprintf("found %d tables in schema %q", len(s.Tables), s.Name)}
+		case len(s.Tables) == 1 && s.Tables[0].Name != revT.Name:
+			return &migrate.NotCleanError{Reason: fmt.Sprintf("found table %q in schema %q", s.Tables[0].Name, s.Name)}
+		}
+	}
+	return nil
+}
+
 func acquire(ctx context.Context, conn schema.ExecQuerier, id uint32, timeout time.Duration) error {
 	switch {
 	// With timeout (context-based).
@@ -245,6 +283,11 @@ func acquire(ctx context.Context, conn schema.ExecQuerier, id uint32, timeout ti
 		}
 		return nil
 	}
+}
+
+// supportsIndexInclude reports if the server supports the INCLUDE clause.
+func (c *conn) supportsIndexInclude() bool {
+	return c.version >= 11_00_00
 }
 
 type parser struct{}
@@ -313,6 +356,7 @@ const (
 	TypeReal   = "real"
 	TypeFloat8 = "float8" // double precision
 	TypeFloat4 = "float4" // real
+	TypeFloat  = "float"  // float(p).
 
 	TypeNumeric = "numeric"
 	TypeDecimal = "decimal" // numeric

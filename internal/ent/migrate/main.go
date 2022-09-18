@@ -14,7 +14,7 @@ import (
 
 func main() {
 	ctx := context.Background()
-	dir, err := atlas.NewLocalDir("ent/migrate/migrations")
+	dir, err := atlas.NewGolangMigrateDir("ent/migrate/migrations")
 	if err != nil {
 		log.Fatalf("failed to create the atlas migration directory: %v", err)
 	}
@@ -22,7 +22,6 @@ func main() {
 		schema.WithDir(dir),
 		schema.WithMigrationMode(schema.ModeReplay),
 		schema.WithDialect(dialect.Postgres),
-		schema.WithFormatter(atlas.DefaultFormatter),
 	}
 	if len(os.Args) != 2 {
 		log.Fatalf("migration name is required. Use: 'go run -mod=mod ent/migrate/main.go <name>'")

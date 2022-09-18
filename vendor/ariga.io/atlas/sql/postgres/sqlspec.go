@@ -21,8 +21,8 @@ import (
 type (
 	doc struct {
 		Tables  []*sqlspec.Table  `spec:"table"`
-		Schemas []*sqlspec.Schema `spec:"schema"`
 		Enums   []*Enum           `spec:"enum"`
+		Schemas []*sqlspec.Schema `spec:"schema"`
 	}
 	// Enum holds a specification for an enum, that can be referenced as a column type.
 	Enum struct {
@@ -38,7 +38,7 @@ func init() {
 }
 
 // evalSpec evaluates an Atlas DDL document into v using the input.
-func evalSpec(p *hclparse.Parser, v interface{}, input map[string]string) error {
+func evalSpec(p *hclparse.Parser, v any, input map[string]string) error {
 	var d doc
 	if err := hclState.Eval(p, &d, input); err != nil {
 		return err
@@ -49,24 +49,21 @@ func evalSpec(p *hclparse.Parser, v interface{}, input map[string]string) error 
 			return fmt.Errorf("specutil: failed converting to *schema.Realm: %w", err)
 		}
 		if len(d.Enums) > 0 {
-			for _, sch := range v.Schemas {
-				if err := convertEnums(d.Tables, d.Enums, sch); err != nil {
-					return err
-				}
+			if err := convertEnums(d.Tables, d.Enums, v); err != nil {
+				return err
 			}
 		}
 	case *schema.Schema:
 		if len(d.Schemas) != 1 {
 			return fmt.Errorf("specutil: expecting document to contain a single schema, got %d", len(d.Schemas))
 		}
-		var r schema.Realm
-		if err := specutil.Scan(&r, d.Schemas, d.Tables, convertTable); err != nil {
+		r := &schema.Realm{}
+		if err := specutil.Scan(r, d.Schemas, d.Tables, convertTable); err != nil {
 			return err
 		}
-		if err := convertEnums(d.Tables, d.Enums, r.Schemas[0]); err != nil {
+		if err := convertEnums(d.Tables, d.Enums, r); err != nil {
 			return err
 		}
-		r.Schemas[0].Realm = nil
 		*v = *r.Schemas[0]
 	default:
 		return fmt.Errorf("specutil: failed unmarshaling spec. %T is not supported", v)
@@ -75,7 +72,7 @@ func evalSpec(p *hclparse.Parser, v interface{}, input map[string]string) error 
 }
 
 // MarshalSpec marshals v into an Atlas DDL document using a schemahcl.Marshaler.
-func MarshalSpec(v interface{}, marshaler schemahcl.Marshaler) ([]byte, error) {
+func MarshalSpec(v any, marshaler schemahcl.Marshaler) ([]byte, error) {
 	var d doc
 	switch s := v.(type) {
 	case *schema.Schema:
@@ -97,11 +94,14 @@ func MarshalSpec(v interface{}, marshaler schemahcl.Marshaler) ([]byte, error) {
 			d.Schemas = append(d.Schemas, doc.Schemas...)
 			d.Enums = append(d.Enums, doc.Enums...)
 		}
+		if err := specutil.QualifyDuplicates(d.Tables); err != nil {
+			return nil, err
+		}
+		if err := specutil.QualifyReferences(d.Tables, s); err != nil {
+			return nil, err
+		}
 	default:
 		return nil, fmt.Errorf("specutil: failed marshaling spec. %T is not supported", v)
-	}
-	if err := specutil.QualifyDuplicates(d.Tables); err != nil {
-		return nil, err
 	}
 	return marshaler.MarshalSpec(&d)
 }
@@ -117,7 +117,7 @@ var (
 		schemahcl.WithScopedEnums("table.foreign_key.on_delete", specutil.ReferenceVars...),
 	)
 	// MarshalHCL marshals v into an Atlas HCL DDL document.
-	MarshalHCL = schemahcl.MarshalerFunc(func(v interface{}) ([]byte, error) {
+	MarshalHCL = schemahcl.MarshalerFunc(func(v any) ([]byte, error) {
 		return MarshalSpec(v, hclState)
 	})
 	// EvalHCL implements the schemahcl.Evaluator interface.
@@ -318,6 +318,22 @@ func convertIndex(spec *sqlspec.Index, t *schema.Table) (*schema.Index, error) {
 		}
 		idx.Attrs = append(idx.Attrs, &IndexStorageParams{PagesPerRange: p})
 	}
+	if attr, ok := spec.Attr("include"); ok {
+		refs, err := attr.Refs()
+		if err != nil {
+			return nil, err
+		}
+		if len(refs) == 0 {
+			return nil, fmt.Errorf("unexpected empty INCLUDE in index %q definition", spec.Name)
+		}
+		include := make([]*schema.Column, len(refs))
+		for i, r := range refs {
+			if include[i], err = specutil.ColumnByRef(t, r); err != nil {
+				return nil, err
+			}
+		}
+		idx.Attrs = append(idx.Attrs, &IndexInclude{Columns: include})
+	}
 	return idx, nil
 }
 
@@ -341,44 +357,75 @@ func convertColumnType(spec *sqlspec.Column) (schema.Type, error) {
 
 // convertEnums converts possibly referenced column types (like enums) to
 // an actual schema.Type and sets it on the correct schema.Column.
-func convertEnums(tbls []*sqlspec.Table, enums []*Enum, sch *schema.Schema) error {
-	for _, tbl := range tbls {
-		for _, col := range tbl.Columns {
-			if col.Type.IsRef {
-				e, err := resolveEnum(col.Type, enums)
+func convertEnums(tables []*sqlspec.Table, enums []*Enum, r *schema.Realm) error {
+	var (
+		used   = make(map[*Enum]struct{})
+		byName = make(map[string]*Enum)
+	)
+	for _, e := range enums {
+		byName[e.Name] = e
+	}
+	for _, t := range tables {
+		for _, c := range t.Columns {
+			var enum *Enum
+			switch {
+			case c.Type.IsRef:
+				n, err := enumName(c.Type)
 				if err != nil {
 					return err
 				}
-				t, ok := sch.Table(tbl.Name)
+				e, ok := byName[n]
 				if !ok {
-					return fmt.Errorf("postgres: table %q not found in schema %q", tbl.Name, sch.Name)
+					return fmt.Errorf("enum %q was not found", n)
 				}
-				c, ok := t.Column(col.Name)
-				if !ok {
-					return fmt.Errorf("postgrs: column %q not found in table %q", col.Name, t.Name)
+				enum = e
+			default:
+				n, ok := arrayType(c.Type.T)
+				if !ok || byName[n] == nil {
+					continue
 				}
-				c.Type.Type = &schema.EnumType{
-					T:      e.Name,
-					Values: e.Values,
-				}
+				enum = byName[n]
+			}
+			used[enum] = struct{}{}
+			schemaE, err := specutil.SchemaName(enum.Schema)
+			if err != nil {
+				return fmt.Errorf("extract schema name from enum refrence: %w", err)
+			}
+			es, ok := r.Schema(schemaE)
+			if !ok {
+				return fmt.Errorf("schema %q not found in realm for table %q", schemaE, t.Name)
+			}
+			schemaT, err := specutil.SchemaName(t.Schema)
+			if err != nil {
+				return fmt.Errorf("extract schema name from table refrence: %w", err)
+			}
+			ts, ok := r.Schema(schemaT)
+			if !ok {
+				return fmt.Errorf("schema %q not found in realm for table %q", schemaT, t.Name)
+			}
+			tt, ok := ts.Table(t.Name)
+			if !ok {
+				return fmt.Errorf("table %q not found in schema %q", t.Name, ts.Name)
+			}
+			cc, ok := tt.Column(c.Name)
+			if !ok {
+				return fmt.Errorf("column %q not found in table %q", c.Name, t.Name)
+			}
+			e := &schema.EnumType{T: enum.Name, Schema: es, Values: enum.Values}
+			switch t := cc.Type.Type.(type) {
+			case *ArrayType:
+				t.Type = e
+			default:
+				cc.Type.Type = e
 			}
 		}
 	}
-	return nil
-}
-
-// resolveEnum returns the first Enum that matches the name referenced by the given column type.
-func resolveEnum(ref *schemahcl.Type, enums []*Enum) (*Enum, error) {
-	n, err := enumName(ref)
-	if err != nil {
-		return nil, err
-	}
 	for _, e := range enums {
-		if e.Name == n {
-			return e, err
+		if _, ok := used[e]; !ok {
+			return fmt.Errorf("enum %q declared but not used", e.Name)
 		}
 	}
-	return nil, fmt.Errorf("postgres: enum %q not found", n)
+	return nil
 }
 
 // enumName extracts the name of the referenced Enum from the reference string.
@@ -399,30 +446,28 @@ func enumRef(n string) *schemahcl.Ref {
 
 // schemaSpec converts from a concrete Postgres schema to Atlas specification.
 func schemaSpec(schem *schema.Schema) (*doc, error) {
-	var d doc
 	s, tbls, err := specutil.FromSchema(schem, tableSpec)
 	if err != nil {
 		return nil, err
 	}
-	d.Schemas = []*sqlspec.Schema{s}
-	d.Tables = tbls
-
-	enums := make(map[string]struct{})
+	d := &doc{
+		Tables:  tbls,
+		Schemas: []*sqlspec.Schema{s},
+	}
+	enums := make(map[string]bool)
 	for _, t := range schem.Tables {
 		for _, c := range t.Columns {
-			if t, ok := c.Type.Type.(*schema.EnumType); ok {
-				if _, ok := enums[t.T]; !ok {
-					d.Enums = append(d.Enums, &Enum{
-						Name:   t.T,
-						Schema: specutil.SchemaRef(s.Name),
-						Values: t.Values,
-					})
-					enums[t.T] = struct{}{}
-				}
+			if e, ok := hasEnumType(c); ok && !enums[e.T] {
+				d.Enums = append(d.Enums, &Enum{
+					Name:   e.T,
+					Schema: specutil.SchemaRef(s.Name),
+					Values: e.Values,
+				})
+				enums[e.T] = true
 			}
 		}
 	}
-	return &d, nil
+	return d, nil
 }
 
 // tableSpec converts from a concrete Postgres sqlspec.Table to a schema.Table.
@@ -452,6 +497,16 @@ func indexSpec(idx *schema.Index) (*sqlspec.Index, error) {
 	// Avoid printing the index type if it is the default.
 	if i := (IndexType{}); sqlx.Has(idx.Attrs, &i) && i.T != IndexTypeBTree {
 		spec.Extra.Attrs = append(spec.Extra.Attrs, specutil.VarAttr("type", strings.ToUpper(i.T)))
+	}
+	if i := (IndexInclude{}); sqlx.Has(idx.Attrs, &i) && len(i.Columns) > 0 {
+		attr := &schemahcl.ListValue{}
+		for _, c := range i.Columns {
+			attr.V = append(attr.V, specutil.ColumnRef(c.Name))
+		}
+		spec.Extra.Attrs = append(spec.Extra.Attrs, &schemahcl.Attr{
+			K: "include",
+			V: attr,
+		})
 	}
 	if i := (IndexPredicate{}); sqlx.Has(idx.Attrs, &i) && i.P != "" {
 		spec.Extra.Attrs = append(spec.Extra.Attrs, specutil.VarAttr("where", strconv.Quote(i.P)))
@@ -521,8 +576,8 @@ var TypeRegistry = schemahcl.NewRegistry(
 		schemahcl.AliasTypeSpec("bit_varying", TypeBitVar, schemahcl.WithAttributes(&schemahcl.TypeAttr{Name: "len", Kind: reflect.Int64})),
 		schemahcl.NewTypeSpec(TypeVarChar, schemahcl.WithAttributes(schemahcl.SizeTypeAttr(false))),
 		schemahcl.AliasTypeSpec("character_varying", TypeCharVar, schemahcl.WithAttributes(schemahcl.SizeTypeAttr(false))),
-		schemahcl.NewTypeSpec(TypeChar, schemahcl.WithAttributes(schemahcl.SizeTypeAttr(true))),
-		schemahcl.NewTypeSpec(TypeCharacter, schemahcl.WithAttributes(schemahcl.SizeTypeAttr(true))),
+		schemahcl.NewTypeSpec(TypeChar, schemahcl.WithAttributes(schemahcl.SizeTypeAttr(false))),
+		schemahcl.NewTypeSpec(TypeCharacter, schemahcl.WithAttributes(schemahcl.SizeTypeAttr(false))),
 		schemahcl.NewTypeSpec(TypeInt2),
 		schemahcl.NewTypeSpec(TypeInt4),
 		schemahcl.NewTypeSpec(TypeInt8),
@@ -544,6 +599,7 @@ var TypeRegistry = schemahcl.NewRegistry(
 		schemahcl.NewTypeSpec(TypeBox),
 		schemahcl.NewTypeSpec(TypePath),
 		schemahcl.NewTypeSpec(TypePoint),
+		schemahcl.NewTypeSpec(TypePolygon),
 		schemahcl.NewTypeSpec(TypeDate),
 		schemahcl.NewTypeSpec(TypeTime, schemahcl.WithAttributes(precisionTypeAttr()), formatTime()),
 		schemahcl.NewTypeSpec(TypeTimeTZ, schemahcl.WithAttributes(precisionTypeAttr()), formatTime()),
@@ -551,6 +607,7 @@ var TypeRegistry = schemahcl.NewRegistry(
 		schemahcl.NewTypeSpec(TypeTimestamp, schemahcl.WithAttributes(precisionTypeAttr()), formatTime()),
 		schemahcl.AliasTypeSpec("double_precision", TypeDouble),
 		schemahcl.NewTypeSpec(TypeReal),
+		schemahcl.NewTypeSpec(TypeFloat, schemahcl.WithAttributes(precisionTypeAttr())),
 		schemahcl.NewTypeSpec(TypeFloat8),
 		schemahcl.NewTypeSpec(TypeFloat4),
 		schemahcl.NewTypeSpec(TypeNumeric, schemahcl.WithAttributes(precisionTypeAttr(), &schemahcl.TypeAttr{Name: "scale", Kind: reflect.Int, Required: false})),

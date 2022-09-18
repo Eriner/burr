@@ -29,8 +29,8 @@ func IsNotExistError(err error) bool {
 
 // ExecQuerier wraps the two standard sql.DB methods.
 type ExecQuerier interface {
-	QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error)
-	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 }
 
 // An InspectMode controls the amount and depth of information returned on inspection.
@@ -57,6 +57,18 @@ type (
 
 		// Tables to inspect. Empty means all tables in the schema.
 		Tables []string
+
+		// Exclude defines a list of glob patterns used to filter resources from inspection.
+		// The syntax used by the different drivers is implemented as follows:
+		//
+		//	t   // exclude table 't'.
+		//	*   // exclude all tables.
+		//	t.c // exclude column, index and foreign-key named 'c' in table 't'.
+		//	t.* // the last item defines the filtering; all resources under 't' are excluded.
+		//	*.c // the last item defines the filtering; all resourced named 'c' are excluded in all tables.
+		//	*.* // the last item defines the filtering; all resourced under all tables are excluded.
+		//
+		Exclude []string
 	}
 
 	// InspectRealmOption describes options for RealmInspector.
@@ -67,6 +79,20 @@ type (
 
 		// Schemas to inspect. Empty means all schemas in the realm.
 		Schemas []string
+
+		// Exclude defines a list of glob patterns used to filter resources from inspection.
+		// The syntax used by the different drivers is implemented as follows:
+		//
+		//	s     // exclude schema 't'.
+		//	*     // exclude all schemas.
+		//	s.t   // exclude table 't' under schema 's'.
+		//	s.*   // the last item defines the filtering; all tables under 's' are excluded.
+		//	*.t   // the last item defines the filtering; all tables named 't' are excluded in all schemas.
+		//	*.*   // the last item defines the filtering; all tables under all schemas are excluded.
+		//	*.*.c // the last item defines the filtering; all resourced named 'c' are excluded in all tables.
+		//	*.*.* // the last item defines the filtering; all resources are excluded in all tables.
+		//
+		Exclude []string
 	}
 
 	// Inspector is the interface implemented by the different database

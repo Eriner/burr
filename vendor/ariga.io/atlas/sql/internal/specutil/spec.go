@@ -94,7 +94,7 @@ type doc struct {
 
 // Marshal marshals v into an Atlas DDL document using a schemahcl.Marshaler. Marshal uses the given
 // schemaSpec function to convert a *schema.Schema into *sqlspec.Schema and []*sqlspec.Table.
-func Marshal(v interface{}, marshaler schemahcl.Marshaler, schemaSpec func(schem *schema.Schema) (*sqlspec.Schema, []*sqlspec.Table, error)) ([]byte, error) {
+func Marshal(v any, marshaler schemahcl.Marshaler, schemaSpec func(schem *schema.Schema) (*sqlspec.Schema, []*sqlspec.Table, error)) ([]byte, error) {
 	d := &doc{}
 	switch s := v.(type) {
 	case *schema.Schema:
@@ -113,11 +113,14 @@ func Marshal(v interface{}, marshaler schemahcl.Marshaler, schemaSpec func(schem
 			d.Tables = append(d.Tables, tables...)
 			d.Schemas = append(d.Schemas, spec)
 		}
+		if err := QualifyDuplicates(d.Tables); err != nil {
+			return nil, err
+		}
+		if err := QualifyReferences(d.Tables, s); err != nil {
+			return nil, err
+		}
 	default:
 		return nil, fmt.Errorf("specutil: failed marshaling spec. %T is not supported", v)
-	}
-	if err := QualifyDuplicates(d.Tables); err != nil {
-		return nil, err
 	}
 	return marshaler.MarshalSpec(d)
 }
@@ -144,10 +147,53 @@ func QualifyDuplicates(tableSpecs []*sqlspec.Table) error {
 	return nil
 }
 
+// QualifyReferences qualifies any reference with qualifier.
+func QualifyReferences(tableSpecs []*sqlspec.Table, realm *schema.Realm) error {
+	type cref struct{ s, t string }
+	byRef := make(map[cref]*sqlspec.Table)
+	for _, t := range tableSpecs {
+		r := cref{s: t.Qualifier, t: t.Name}
+		if byRef[r] != nil {
+			return fmt.Errorf("duplicate references were found for: %v", r)
+		}
+		byRef[r] = t
+	}
+	for _, t := range tableSpecs {
+		sname, err := SchemaName(t.Schema)
+		if err != nil {
+			return err
+		}
+		s1, ok := realm.Schema(sname)
+		if !ok {
+			return fmt.Errorf("schema %q was not found in realm", sname)
+		}
+		t1, ok := s1.Table(t.Name)
+		if !ok {
+			return fmt.Errorf("table %q.%q was not found in realm", sname, t.Name)
+		}
+		for _, fk := range t.ForeignKeys {
+			fk1, ok := t1.ForeignKey(fk.Symbol)
+			if !ok {
+				return fmt.Errorf("table %q.%q.%q was not found in realm", sname, t.Name, fk.Symbol)
+			}
+			for i, c := range fk.RefColumns {
+				if r, ok := byRef[cref{s: fk1.RefTable.Schema.Name, t: fk1.RefTable.Name}]; ok && r.Qualifier != "" {
+					fk.RefColumns[i] = qualifiedExternalColRef(fk1.RefColumns[i].Name, r.Name, r.Qualifier)
+				} else if r, ok := byRef[cref{t: fk1.RefTable.Name}]; ok && r.Qualifier == "" {
+					fk.RefColumns[i] = externalColRef(fk1.RefColumns[i].Name, r.Name)
+				} else {
+					return fmt.Errorf("missing reference for column %q in %q.%q.%q", c.V, sname, t.Name, fk.Symbol)
+				}
+			}
+		}
+	}
+	return nil
+}
+
 // HCLBytesFunc returns a helper that evaluates an HCL document from a byte slice instead
 // of from an hclparse.Parser instance.
-func HCLBytesFunc(ev schemahcl.Evaluator) func(b []byte, v interface{}, inp map[string]string) error {
-	return func(b []byte, v interface{}, inp map[string]string) error {
+func HCLBytesFunc(ev schemahcl.Evaluator) func(b []byte, v any, inp map[string]string) error {
+	return func(b []byte, v any, inp map[string]string) error {
 		parser := hclparse.NewParser()
 		if _, diag := parser.ParseHCL(b, ""); diag.HasErrors() {
 			return diag
