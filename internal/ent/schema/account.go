@@ -21,6 +21,9 @@ import (
 // projectCreationDate is used as a start time for sonyflake IDs.
 var projectCreationDate, _ = time.Parse("Jan 2, 2006 at 3:04pm (MST)", "Sept 14, 2022 at 10:32am (EDT)")
 
+// Accounts can be both users or groups - they are functionally identical except for the following unique attrs:
+// Users a Session edge.
+// Groups have member and moderator edges.
 type Account struct {
 	ent.Schema
 }
@@ -38,17 +41,20 @@ func (Account) Fields() []ent.Field {
 
 		// NOTE: the created_at and updated_at fields are automatically created by the AuditMixin
 
-		field.String("username").
+		field.String("name").
 			Comment("The Account's username").
 			Immutable().
 			MaxLen(64). // TODO: check spec
 			NotEmpty(),
 
-		field.String("domain").
-			Comment("The Account's domain").
-			Immutable().
-			MaxLen(255).
-			NotEmpty(),
+		// read from edge. Move to Servers schema
+		/*
+			field.String("domain").
+				Comment("The Account's domain").
+				Immutable().
+				MaxLen(255).
+				NotEmpty(),
+		*/
 
 		field.String("display_name").
 			Comment("Account full name").
@@ -202,16 +208,6 @@ func (Account) Fields() []ent.Field {
 		field.Time("suspended_at").
 			Comment("The time the Account was silenced").
 			Nillable(),
-
-		field.Int64("role").
-			Comment("Accounts can be assigned roles").
-			Default(0).
-			Nillable(),
-
-		field.Int64("badges").
-			Comment("Accounts can have badges").
-			Default(0).
-			Nillable(),
 	}
 }
 
@@ -224,37 +220,69 @@ func (Account) Indexes() []ent.Index {
 
 func (Account) Edges() []ent.Edge {
 	return []ent.Edge{
+		//
+		// Account Belongs to
+		//
 		edge.From("servers", Server.Type).
 			Ref("accounts").
+			Unique().
+			Required().
 			Comment("Accounts belong to a Server rooted at a domain (FQDN)"),
+
+		edge.From("events", Event.Type).
+			Ref("accounts").
+			Comment("Accounts can belong to one or more events"),
+
+		//
+		// (Group) Account Belongs to
+		//
+
+		edge.From("roles", Role.Type).
+			Ref("accounts").
+			Comment("Accounts can belong to one or more groups"),
+
+		//
+		// Belongs to Account
+		//
+
+		edge.To("statuses", Status.Type).
+			Annotations(entsql.Annotation{
+				// When an account is deleted, delete the statuses
+				OnDelete: entsql.Cascade,
+			}).
+			Comment("Accounts can have zero or many statuses"),
+
+		edge.To("following", Account.Type).
+			From("followers").
+			Comment("Accounts can be followed by zero or more accounts"),
+
+		edge.To("badges", Badge.Type).
+			Comment("Accounts can have zero or more badges"),
+
+		edge.To("liked_statuses", Status.Type).
+			Through("likes", Like.Type).
+			Comment("Accounts can like many statuses"),
+
+		//
+		// Belongs to (User) Account
+		//
 
 		edge.To("sessions", Session.Type).
 			Annotations(entsql.Annotation{
 				// When an account is deleted, delete the sessions.
 				OnDelete: entsql.Cascade,
 			}).
-			Comment("Sessions are owned by a single Account which itself can have many sessions"),
+			Comment("Sessions are owned by a one Account which itself can have many sessions"),
 
-		edge.From("followers", Account.Type).
-			Ref("accounts").
-			Comment("Accounts can be followed by one or more accounts"),
+		//
+		// Belongs to (Group) Account
+		//
 
-		edge.From("following", Account.Type).
-			Ref("accounts").
-			Comment("Accounts can be follow one or more accounts"),
+		edge.To("members", Account.Type).
+			Comment("Accounts can have zero or more members"),
 
-		edge.From("roles", Role.Type).
-			Ref("accounts").
-			Comment("Accounts can be assigned a role"),
-
-		edge.From("groups", Group.Type).
-			Ref("accounts").
-			Comment("Accounts can belong to one or more groups"),
-
-		// NOTE: Events should belong to groups, not accounts.
-		// edge.From("events", Event.Type).
-		//	Ref("accounts").
-		//	Comment("Accounts can belong to one or more events"),
+		edge.To("moderators", Account.Type).
+			Comment("Accounts can have zero or more moderators"),
 	}
 }
 
