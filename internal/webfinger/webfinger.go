@@ -11,7 +11,7 @@ import (
 
 // API implements webfinger
 func API(r *chi.Mux) {
-	r.Route(".well-known/webfinger", func(r chi.Router) {
+	r.Route("/.well-known/webfinger", func(r chi.Router) {
 		r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 			params := r.URL.Query()
 			resource := strings.Split(

@@ -2,30 +2,27 @@ package activitypub
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"sync"
 
 	"github.com/eriner/burr/internal/ent"
+	"github.com/eriner/burr/internal/ent/actor"
+	"github.com/eriner/burr/internal/policy"
 	"github.com/go-fed/activity/pub"
 	"github.com/go-fed/activity/streams/vocab"
 )
+
+var ErrUnauthorized = fmt.Errorf("Unauthorized")
 
 var _ pub.Database = (*APDB)(nil)
 
 // APDB implements github.com/go-fed/activity/pub.Database
 type APDB struct {
-	Host string // fqdn of the server
-	DB   *ent.Client
-
-	content *sync.Map // TODO: replace and implement ent database schema
-	locks   *sync.Map
-}
-
-// content is ap data
-type content struct {
-	data  vocab.Type
-	local bool // true if this server owns this content
+	Host  string // fqdn of the server
+	DB    *ent.Client
+	locks *sync.Map
 }
 
 // Lock takes a lock for the object at the specified id. If an error
@@ -73,7 +70,7 @@ func (p *APDB) InboxContains(c context.Context, inbox *url.URL, id *url.URL) (co
 	// contains an element in its `ordered_items` property that has a
 	// matching `id`"
 	var oc vocab.ActivityStreamsOrderedCollection
-	oc, err = p.getOrderedCollection(inbox) // TODO
+	oc, err = p.getOrderedCollection(inbox)
 	if err != nil {
 		return
 	}
@@ -113,14 +110,24 @@ func (p *APDB) GetInbox(c context.Context, inboxIRI *url.URL) (inbox vocab.Activ
 // database entries. Separate calls to Create will do that.
 //
 // The library makes this call only after acquiring a lock first.
-func (p *APDB) SetInbox(c context.Context, inbox vocab.ActivityStreamsOrderedCollectionPage) error {
-	storedInbox, err := p.getOrderedCollection(inboxIRI)
-	if err != nil {
-		return err
+func (p *APDB) SetInbox(ctx context.Context, inbox vocab.ActivityStreamsOrderedCollectionPage) error {
+	// Authorize
+	actor := policy.ActorFromContext(ctx)
+	if actor == nil {
+		return ErrUnauthorized
 	}
-	updatedInbox := p.applyDiffOrderedCollection(storedInbox, inbox)
+	panic("unimplemented")
+	// TODO
+	/*
+		storedInbox, err := p.getOrderedCollection(inboxIRI)
+		if err != nil {
+			return err
+		}
+		updatedInbox := p.applyDiffOrderedCollection(storedInbox, inbox)
 
-	return p.saveToContent(updatedInbox)
+		return p.saveToContent(updatedInbox)
+	*/
+	return nil
 }
 
 // Owns returns true if the database has an entry for the IRI and it
@@ -129,7 +136,7 @@ func (p *APDB) SetInbox(c context.Context, inbox vocab.ActivityStreamsOrderedCol
 // The library makes this call only after acquiring a lock first.
 func (p *APDB) Owns(c context.Context, id *url.URL) (owns bool, err error) {
 	// TODO: documentation says to use something "more robust than this string comparison", whatever that means.
-	return id.Host == p.host, nil
+	return id.Host == p.Host, nil
 }
 
 // ActorForOutbox fetches the actor's IRI for the given outbox IRI.
@@ -143,7 +150,7 @@ func (p *APDB) ActorForOutbox(c context.Context, outboxIRI *url.URL) (actorIRI *
 //
 // The library makes this call only after acquiring a lock first.
 func (p *APDB) ActorForInbox(c context.Context, inboxIRI *url.URL) (actorIRI *url.URL, err error) {
-	panic("not implemented") // TODO: Implement
+	panic("not implemented")
 }
 
 // OutboxForInbox fetches the corresponding actor's outbox IRI for the
@@ -151,28 +158,34 @@ func (p *APDB) ActorForInbox(c context.Context, inboxIRI *url.URL) (actorIRI *ur
 //
 // The library makes this call only after acquiring a lock first.
 func (p *APDB) OutboxForInbox(c context.Context, inboxIRI *url.URL) (outboxIRI *url.URL, err error) {
-	panic("not implemented") // TODO: Implement
+	panic("not implemented")
 }
 
 // Exists returns true if the database has an entry for the specified
 // id. It may not be owned by this application instance.
 //
 // The library makes this call only after acquiring a lock first.
-func (p *APDB) Exists(ctx context.Context, id *url.URL) (exists bool, err error) {
-	_, exists = p.content.Load(id.String())
-	return exists, nil
+func (p *APDB) Exists(ctx context.Context, id *url.URL) (bool, error) {
+	_, err := p.DB.Actor.Query().
+		Where(actor.URL(id.String())).
+		OnlyID(ctx)
+	if errors.Is(err, &ent.NotFoundError{}) {
+		return false, nil
+	} else if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // Get returns the database entry for the specified id.
 //
 // The library makes this call only after acquiring a lock first.
 func (p *APDB) Get(ctx context.Context, id *url.URL) (value vocab.Type, err error) {
-	v, ok := p.content.Load(id.String())
-	if !ok {
-		return nil, fmt.Errorf("Get failed")
+	t, err := p.typeFromID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to Get() iri from database: %w", err)
 	}
-	c := v.(*content)
-	return c.data, nil
+	return t, nil
 }
 
 // Create adds a new entry to the database which must be able to be
@@ -189,18 +202,24 @@ func (p *APDB) Get(ctx context.Context, id *url.URL) (value vocab.Type, err erro
 // multiple times for the same ActivityStreams object.
 func (p *APDB) Create(ctx context.Context, asType vocab.Type) error {
 	// could be local or federated content.
+	var local bool
 	id, err := pub.GetId(asType)
 	if err != nil {
 		return err
 	}
-	owns, err := p.Owns(ctx, id)
+	local, err = p.Owns(ctx, id)
 	if err != nil {
 		return err
 	}
-	p.content.Store(id.String(), &content{
-		data:  asType,
-		local: owns,
-	})
+
+	_ = local
+	typ := asType.GetTypeName()
+	switch typ {
+	// TODO
+	default:
+		return fmt.Errorf("unknown AP type: %q", typ)
+	}
+
 	return nil
 }
 
@@ -227,16 +246,15 @@ func (p *APDB) Update(ctx context.Context, asType vocab.Type) error {
 //
 // The library makes this call only after acquiring a lock first.
 func (p *APDB) Delete(ctx context.Context, id *url.URL) error {
-	p.content.Delete(id.String())
-	return nil
+	panic("not implemented")
 }
 
 // GetOutbox returns the first ordered collection page of the outbox
 // at the specified IRI, for prepending new items.
 //
 // The library makes this call only after acquiring a lock first.
-func (p *APDB) GetOutbox(c context.Context, outboxIRI *url.URL) (inbox vocab.ActivityStreamsOrderedCollectionPage, err error) {
-	return p.getOrderedCollectionPage(outboxIRI) // TODO
+func (p *APDB) GetOutbox(ctx context.Context, outboxIRI *url.URL) (inbox vocab.ActivityStreamsOrderedCollectionPage, err error) {
+	return p.getOrderedCollectionPage(outboxIRI)
 }
 
 // SetOutbox saves the outbox value given from GetOutbox, with new items
@@ -244,13 +262,22 @@ func (p *APDB) GetOutbox(c context.Context, outboxIRI *url.URL) (inbox vocab.Act
 // database entries. Separate calls to Create will do that.
 //
 // The library makes this call only after acquiring a lock first.
-func (p *APDB) SetOutbox(c context.Context, outbox vocab.ActivityStreamsOrderedCollectionPage) error {
-	storedOutbox, err := p.getOrderedCollection(outboxIRI)
-	if err != nil {
-		return err
+func (p *APDB) SetOutbox(ctx context.Context, outbox vocab.ActivityStreamsOrderedCollectionPage) error {
+	// Authorize
+	actor := policy.ActorFromContext(ctx)
+	if actor == nil {
+		return ErrUnauthorized
 	}
-	updatedOutbox := p.applyDiffOrderedCollection(storedOutbox, outbox)
-	return p.saveToContent(updatedOutbox)
+	panic("unimplemented")
+	//TODO
+	/*
+		storedOutbox, err := p.getOrderedCollection(outboxIRI)
+		if err != nil {
+			return err
+		}
+		updatedOutbox := p.applyDiffOrderedCollection(storedOutbox, outbox)
+		return p.saveToContent(updatedOutbox)
+	*/
 }
 
 // NewID creates a new IRI id for the provided activity or object. The
@@ -269,22 +296,12 @@ func (p *APDB) NewID(c context.Context, t vocab.Type) (id *url.URL, err error) {
 // If modified, the library will then call Update.
 //
 // The library makes this call only after acquiring a lock first.
-func (p *APDB) Followers(c context.Context, actorIRI *url.URL) (followers vocab.ActivityStreamsCollection, err error) {
-	var person vocab.ActivityStreamsPerson
-	person, err = p.getPerson(actorIRI)
+func (p *APDB) Followers(ctx context.Context, actorURL *url.URL) (followers vocab.ActivityStreamsCollection, err error) {
+	actor, err := p.actorFromURL(ctx, actorURL)
 	if err != nil {
-		return
+		return nil, fmt.Errorf("failed to get followers: %w", err)
 	}
-	f := person.GetActivityStreamsFollowers()
-	if f == nil {
-		return nil, fmt.Errorf("no followers collection")
-	}
-	// f could be an OrderedCollection, IRI, or something extending an OrderedCollection
-	fid, err := pub.ToId(f)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get id: %w", err)
-	}
-	return p.getOrderedCollection(fid)
+	return p.asCollectionFromActors(actor.Edges.Followers), nil
 }
 
 // Following obtains the Following Collection for an actor with the
@@ -327,4 +344,25 @@ func (p *APDB) applyDiffOrderedCollection(x, y vocab.ActivityStreamsOrderedColle
 
 func (p *APDB) getOrderedCollectionPage(iri *url.URL) (vocab.ActivityStreamsOrderedCollectionPage, error) {
 	panic("TODO")
+}
+
+func (p *APDB) actorFromURL(ctx context.Context, iri *url.URL) (*ent.Actor, error) {
+	actor, err := p.DB.Actor.Query().
+		Where(actor.URL(iri.String())).
+		Only(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get actor from URL: %w", err)
+	}
+	return actor, nil
+}
+
+func (p *APDB) asCollectionFromActors([]*ent.Actor) vocab.ActivityStreamsCollection {
+	// TODO
+	panic("unimplemented")
+	return nil
+}
+
+func (p *APDB) typeFromID(ctx context.Context, id *url.URL) (vocab.Type, error) {
+	// TODO
+	panic("not implemented")
 }

@@ -24,12 +24,12 @@ func initDB(c *ent.Client) error {
 		return ent.MutateFunc(func(ctx context.Context, m ent.Mutation) (ent.Value, error) {
 			start := time.Now()
 			defer func() {
-				var email string
-				if user := policy.UserFromContext(ctx); user != nil {
-					email = user.Email
+				var name string
+				if actor := policy.ActorFromContext(ctx); actor != nil {
+					name = actor.Name
 				}
-				log.Printf("Op=%s\tType=%s\tTime=%s\tConcreteType=%T\tUser=%s\n",
-					m.Op(), m.Type(), time.Since(start), m, email,
+				log.Printf("Op=%s\tType=%s\tTime=%s\tConcreteType=%T\tActor=%s\n",
+					m.Op(), m.Type(), time.Since(start), m, name,
 				)
 			}()
 			return next.Mutate(ctx, m)

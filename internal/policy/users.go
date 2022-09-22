@@ -9,15 +9,15 @@ import (
 type contextKey string
 
 var (
-	SuperuserCtxKey  contextKey = "superuser"   // Should only be used when seeding the DB or performing OP actions.
-	UserCtxKey       contextKey = "user"        // the current user.
-	TargetUserCtxKey contextKey = "target-user" // the user target by the current user's operation.
+	SuperuserCtxKey   contextKey = "superuser"    // Should only be used when seeding the DB or performing OP actions.
+	ActorCtxKey       contextKey = "actor"        // the current authenticated actor.
+	TargetActorCtxKey contextKey = "target-actor" // the user target by the current user's operation.
 )
 
-// UserFromContext returns a User from a context or nil if not present.
-func UserFromContext(reqCtx context.Context) *ent.User {
+// ActorFromContext returns a Actor from a context or nil if not present.
+func ActorFromContext(reqCtx context.Context) *ent.Actor {
 	// TODO: impl
-	user, ok := reqCtx.Value(UserCtxKey).(*ent.User)
+	user, ok := reqCtx.Value(ActorCtxKey).(*ent.Actor)
 	if !ok {
 		return nil
 	}
@@ -28,21 +28,21 @@ func ContextWithSuperuser(ctx context.Context) context.Context {
 	return context.WithValue(ctx, SuperuserCtxKey, true)
 }
 
-// ContextWithUser adds the user to a context.
-func ContextWithUser(ctx context.Context, u *ent.User) context.Context {
-	return context.WithValue(ctx, UserCtxKey, u)
+// ContextWithActor adds the user to a context.
+func ContextWithActor(ctx context.Context, u *ent.Actor) context.Context {
+	return context.WithValue(ctx, ActorCtxKey, u)
 }
 
-// TargetUserFromContext returns a User from a context or nil if not present.
-func TargetUserFromContext(reqCtx context.Context) *ent.User {
-	tu, ok := reqCtx.Value(TargetUserCtxKey).(*ent.User)
+// TargetActorFromContext returns a Actor from a context or nil if not present.
+func TargetActorFromContext(reqCtx context.Context) *ent.Actor {
+	tu, ok := reqCtx.Value(TargetActorCtxKey).(*ent.Actor)
 	if !ok {
 		return nil
 	}
 	return tu
 }
 
-// ContextWithTargetUser adds the user to a context.
-func ContextWithTargetUser(ctx context.Context, u *ent.User) context.Context {
-	return context.WithValue(ctx, UserCtxKey, u)
+// ContextWithTargetActor adds the user to a context.
+func ContextWithTargetActor(ctx context.Context, u *ent.Actor) context.Context {
+	return context.WithValue(ctx, ActorCtxKey, u)
 }
