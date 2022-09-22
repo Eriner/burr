@@ -7,6 +7,7 @@ require (
 	github.com/contribsys/faktory v1.6.1
 	github.com/contribsys/faktory_worker_go v1.6.0
 	github.com/go-chi/chi/v5 v5.0.7
+	github.com/go-fed/activity v1.0.0
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/hashicorp/vault/api v1.7.2
 	github.com/hedwigz/entviz v0.0.0-20220529060928-44574cfd7a21
@@ -32,6 +33,7 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/fatih/color v1.13.0 // indirect
+	github.com/go-fed/httpsig v0.1.1-0.20190914113940-c2de3672e5b5 // indirect
 	github.com/go-openapi/inflect v0.19.0 // indirect
 	github.com/go-redis/redis v6.15.7+incompatible // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
