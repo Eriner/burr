@@ -10,9 +10,13 @@ build:
 	go build -mod=vendor -o burr ./cmd/server
 generate:
 	go generate -mod=mod ./...
+licenses:
+	go generate -tags=licenses ./licenses.go
 release:
 	go generate -mod=vendor  ./...
 	go test -v -mod=vendor  ./...
+	# go install golang.org/x/vuln/cmd/govulncheck@latest
+	govulncheck ./...
 	git diff-index --quiet --cached HEAD --
 	git diff-files --quiet
 	git ls-files --others --exclude-standard
@@ -25,4 +29,4 @@ signoff:
 	drone lint
 	drone sign eriner/burr --save
 
-.PHONY: %
+.PHONY: % *
